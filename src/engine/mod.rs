@@ -1,4 +1,4 @@
-use ash::{Entry, Instance, extensions::ext::DebugUtils, vk::{self, DebugUtilsMessengerEXT}};
+use ash::{Entry, Instance, extensions::ext::DebugUtils, vk::{self, DebugUtilsMessengerEXT, PhysicalDevice, QueueFlags}};
 use std::{ffi::{CString, CStr}, error::Error};
 use winit::window::Window;
 
@@ -12,7 +12,8 @@ const ENABLE_VALIDATION_LAYERS: bool = true;
 pub struct Engine {
     _entry: Entry,
     instance: Instance,
-    debug_report_callback: Option<(DebugUtils, DebugUtilsMessengerEXT)>
+    debug_report_callback: Option<(DebugUtils, DebugUtilsMessengerEXT)>,
+    _physical_device: PhysicalDevice
 }
 
 impl Engine {
@@ -20,16 +21,17 @@ impl Engine {
         let entry = unsafe { Entry::new().expect("Failed to create entry") };
         let instance = Self::create_instance(&entry).unwrap();
         let debug_report_callback = Self::setup_debug_messenger(&entry, &instance);
+        let physical_device = Self::pick_physical_device(&instance);
 
         Ok(Engine {
             _entry: entry,
-            instance: instance,
-            debug_report_callback: debug_report_callback
+            instance,
+            debug_report_callback,
+            _physical_device : physical_device
         })
     }
 
     pub fn update(&mut self) {
-        println!("Running engine");
         log::info!("Running engine");
     }
 
@@ -91,7 +93,42 @@ impl Engine {
             }
         }
     }
+    
+    /// Pick an actual graphics card that exists on the machine.
+    fn pick_physical_device(instance: &Instance) -> PhysicalDevice {
+        let devices = unsafe { instance.enumerate_physical_devices().unwrap() };
+        let device = devices
+            .into_iter()
+            .find(|device| Self::is_device_suitable(&instance, *device))
+            .expect("No suitable physical device!");
 
+        let props = unsafe { instance.get_physical_device_properties(device) };
+        log::info!("Selected physical device: {:?}", unsafe {
+            CStr::from_ptr(props.device_name.as_ptr())
+        });
+        device
+    }
+
+    /// Checks if the physical device can do rendering.
+    fn is_device_suitable(instance: &Instance, device: PhysicalDevice) -> bool {
+        Self::find_queue_families(instance, device).is_some()
+    }
+
+    /// Queues only support a subset of commands. Find the queue family which bests matches 
+    /// our need to render graphics.
+    fn find_queue_families(instance: &Instance, device: PhysicalDevice) -> Option<usize> {
+        let props = unsafe { instance.get_physical_device_queue_family_properties(device) };
+        props
+            .iter()
+            .enumerate()
+            .find(|(_, family)| {
+                family.queue_count > 0 && family.queue_flags.contains(QueueFlags::GRAPHICS)
+            })
+        .map(|(index, _)| index)
+    }
+    
+    /// Sets up a validation layer to print out all messages and severity because I'm a 
+    /// beginner and I'm going to need this :)
     fn setup_debug_messenger(entry: &Entry, instance: &Instance) -> Option<(DebugUtils, DebugUtilsMessengerEXT)> {
         if !ENABLE_VALIDATION_LAYERS {
             return None;

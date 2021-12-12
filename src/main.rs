@@ -1,17 +1,19 @@
 mod engine;
 
 use env_logger::{Builder, Target};
+use log::LevelFilter;
 use winit::{
     dpi::PhysicalSize,
-    window::{WindowBuilder}, event_loop::EventLoop
+    window::WindowBuilder, event_loop::EventLoop
 };
 
-use crate::engine::{Engine};
+use crate::engine::Engine;
 
 fn init_logger(target: Target) {
-    let mut builder = Builder::from_default_env();
-    builder.target(target);
-    builder.init();
+    Builder::from_default_env()
+        .target(target)
+        .filter_level(LevelFilter::Info)
+        .init();
 }
 
 fn main() {
