@@ -137,7 +137,9 @@ impl Engine {
             })
             .map(|(index, _)| index)
     }
-
+    
+    /// Create a logical device based on the validation layers that are enabled.
+    /// The logical device will interact with the physical device (our discrete video card).
     fn create_logical_device_with_graphics_queue(
         instance: &Instance,
         device: PhysicalDevice,
