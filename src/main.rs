@@ -2,10 +2,7 @@ mod engine;
 
 use env_logger::{Builder, Target};
 use log::LevelFilter;
-use winit::{
-    dpi::PhysicalSize,
-    window::WindowBuilder, event_loop::EventLoop
-};
+use winit::{dpi::PhysicalSize, event_loop::EventLoop, window::WindowBuilder};
 
 use crate::engine::Engine;
 
