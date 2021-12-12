@@ -6,7 +6,7 @@ mod utils;
 use utils::vulkan_debug_callback;
 
 // TODO: Move this to a feature instead
-const REQUIRED_LAYERS : [&'static str; 1] = ["VK_LAYER_LUNARG_standard_validation"];
+const REQUIRED_LAYERS : [&'static str; 1] = ["VK_LAYER_KHRONOS_validation"];
 const ENABLE_VALIDATION_LAYERS: bool = true;
 
 pub struct Engine {
@@ -77,17 +77,17 @@ impl Engine {
     fn check_validation_layer_support(entry: &Entry) {
         for required in REQUIRED_LAYERS {
             let found = entry
-                .enumerate_instance_extension_properties()
+                .enumerate_instance_layer_properties()
                 .unwrap()
                 .iter()
                 .any(|layer| {
-                    let name = unsafe { CStr::from_ptr(layer.extension_name.as_ptr()) };
+                    let name = unsafe { CStr::from_ptr(layer.layer_name.as_ptr()) };
                     let name = name.to_str().expect("Failed to get layer name pointer");
                     required == name
                 });
 
             if !found {
-                panic!("Validation layer not supported: {}!", required);
+                panic!("Validation layer not supported: {}", required);
             }
         }
     }

@@ -10,7 +10,7 @@ pub unsafe extern "system" fn vulkan_debug_callback(
     message_severity: SeverityFlag,
     message_types: TypeFlag,
     p_callback_data: *const DebugUtilsMessengerCallbackDataEXT,
-    _: *mut c_void) -> u32 {
+    _: *mut c_void) -> vk::Bool32 {
 
     let message = CStr::from_ptr((*p_callback_data).p_message);
     match message_severity {
