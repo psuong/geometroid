@@ -13,7 +13,6 @@ use std::{
 use winit::window::Window;
 
 mod debug;
-mod surface;
 mod utils;
 
 use debug::{

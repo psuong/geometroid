@@ -2,7 +2,12 @@ mod engine;
 
 use env_logger::{Builder, Target};
 use log::LevelFilter;
-use winit::{dpi::PhysicalSize, event_loop::EventLoop, window::WindowBuilder};
+use winit::{
+    dpi::PhysicalSize,
+    event::{Event, WindowEvent},
+    event_loop::{ControlFlow, EventLoop},
+    window::WindowBuilder,
+};
 
 use crate::engine::Engine;
 
@@ -23,8 +28,21 @@ fn main() {
         .build(&event_loop)
         .unwrap();
 
-    match Engine::new(&window) {
-        Ok(mut engine) => engine.update(),
-        Err(error) => log::error!("Failed to create application due to: {}", error),
-    }
+    let mut engine = Engine::new(&window).unwrap();
+
+    event_loop.run(move |event, _, control_flow| {
+        *control_flow = ControlFlow::Poll;
+
+        match event {
+            Event::MainEventsCleared => {
+                engine.update();
+            },
+            Event::WindowEvent { event, .. } => match event {
+                WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
+                WindowEvent::Resized { .. } => log::debug!("Resize not implemented!"),
+                _ => (),
+            },
+            _ => (),
+        }
+    });
 }
