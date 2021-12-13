@@ -12,12 +12,13 @@ use std::{
 };
 use winit::window::Window;
 
+mod debug;
+mod surface;
 mod utils;
-use utils::vulkan_debug_callback;
 
-// TODO: Move this to a feature instead
-const REQUIRED_LAYERS: [&'static str; 1] = ["VK_LAYER_KHRONOS_validation"];
-const ENABLE_VALIDATION_LAYERS: bool = true;
+use debug::{
+    get_layer_names_and_pointers, setup_debug_messenger, ENABLE_VALIDATION_LAYERS, REQUIRED_LAYERS,
+};
 
 pub struct Engine {
     _entry: Entry,
@@ -25,16 +26,17 @@ pub struct Engine {
     debug_report_callback: Option<(DebugUtils, DebugUtilsMessengerEXT)>,
     _physical_device: PhysicalDevice,
     logical_device: Device,
-    _graphics_queue: Queue
+    _graphics_queue: Queue,
 }
 
 impl Engine {
     pub fn new(_window: &Window) -> Result<Self, Box<dyn Error>> {
         let entry = unsafe { Entry::new().expect("Failed to create entry") };
         let instance = Self::create_instance(&entry).unwrap();
-        let debug_report_callback = Self::setup_debug_messenger(&entry, &instance);
+        let debug_report_callback = setup_debug_messenger(&entry, &instance);
         let physical_device = Self::pick_physical_device(&instance);
-        let (logical_device, graphics_queue) = Self::create_logical_device_with_graphics_queue(&instance, physical_device);
+        let (logical_device, graphics_queue) =
+            Self::create_logical_device_with_graphics_queue(&instance, physical_device);
 
         Ok(Engine {
             _entry: entry,
@@ -42,7 +44,7 @@ impl Engine {
             debug_report_callback,
             _physical_device: physical_device,
             logical_device,
-            _graphics_queue : graphics_queue
+            _graphics_queue: graphics_queue,
         })
     }
 
@@ -137,7 +139,7 @@ impl Engine {
             })
             .map(|(index, _)| index)
     }
-    
+
     /// Create a logical device based on the validation layers that are enabled.
     /// The logical device will interact with the physical device (our discrete video card).
     fn create_logical_device_with_graphics_queue(
@@ -152,7 +154,7 @@ impl Engine {
             .build()];
 
         let device_features = PhysicalDeviceFeatures::builder().build();
-        let (_layer_names, layer_ptrs) = Self::get_layer_names_and_pointers();
+        let (_layer_names, layer_ptrs) = get_layer_names_and_pointers();
 
         let mut device_create_info_builder = DeviceCreateInfo::builder()
             .queue_create_infos(&queue_create_info)
@@ -171,46 +173,6 @@ impl Engine {
 
         let graphics_queue = unsafe { device.get_device_queue(queue_family_index, 0) };
         (device, graphics_queue)
-    }
-
-    /// Gets all the layer names from the REQUIRED_LAYERS
-    /// We only care about VK_LAYER_KHRONOS_validation for now.
-    fn get_layer_names_and_pointers() -> (Vec<CString>, Vec<*const i8>) {
-        let layer_names: Vec<CString> = REQUIRED_LAYERS
-            .iter()
-            .map(|name| CString::new(*name).expect("Failed to build CString!"))
-            .collect();
-
-        let layer_name_pointers: Vec<*const i8> =
-            layer_names.iter().map(|name| name.as_ptr()).collect();
-
-        (layer_names, layer_name_pointers)
-    }
-
-    /// Sets up a validation layer to print out all messages and severity because I'm a
-    /// beginner and I'm going to need this :)
-    fn setup_debug_messenger(
-        entry: &Entry,
-        instance: &Instance,
-    ) -> Option<(DebugUtils, DebugUtilsMessengerEXT)> {
-        if !ENABLE_VALIDATION_LAYERS {
-            return None;
-        }
-
-        let create_info = vk::DebugUtilsMessengerCreateInfoEXT::builder()
-            .flags(vk::DebugUtilsMessengerCreateFlagsEXT::all())
-            .message_severity(vk::DebugUtilsMessageSeverityFlagsEXT::all())
-            .message_type(vk::DebugUtilsMessageTypeFlagsEXT::all())
-            .pfn_user_callback(Some(vulkan_debug_callback))
-            .build();
-
-        let debug_report = DebugUtils::new(entry, instance);
-        let debug_report_callback = unsafe {
-            debug_report
-                .create_debug_utils_messenger(&create_info, None)
-                .unwrap()
-        };
-        Some((debug_report, debug_report_callback))
     }
 }
 
