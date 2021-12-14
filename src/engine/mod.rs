@@ -1,8 +1,8 @@
 use ash::{
-    extensions::ext::DebugUtils,
+    extensions::{ext::DebugUtils, khr::Surface},
     vk::{
         self, DebugUtilsMessengerEXT, DeviceCreateInfo, DeviceQueueCreateInfo, PhysicalDevice,
-        PhysicalDeviceFeatures, Queue, QueueFlags,
+        PhysicalDeviceFeatures, Queue, QueueFlags, SurfaceKHR,
     },
     Device, Entry, Instance,
 };
@@ -21,11 +21,13 @@ use debug::{
 
 pub struct Engine {
     _entry: Entry,
+    _physical_device: PhysicalDevice,
+    _graphics_queue: Queue,
     instance: Instance,
     debug_report_callback: Option<(DebugUtils, DebugUtilsMessengerEXT)>,
-    _physical_device: PhysicalDevice,
+    surface: Surface,
+    surface_khr: SurfaceKHR,
     logical_device: Device,
-    _graphics_queue: Queue,
 }
 
 impl Engine {
@@ -33,17 +35,27 @@ impl Engine {
         let entry = unsafe { Entry::new().expect("Failed to create entry") };
         let instance = Self::create_instance(&entry).unwrap();
         let debug_report_callback = setup_debug_messenger(&entry, &instance);
-        let physical_device = Self::pick_physical_device(&instance);
-        let (logical_device, graphics_queue) =
-            Self::create_logical_device_with_graphics_queue(&instance, physical_device);
+
+        let surface = Surface::new(&entry, &instance);
+        let surface_khr =
+            unsafe { ash_window::create_surface(&entry, &instance, _window, None).unwrap() };
+
+        let physical_device = Self::pick_physical_device(&instance, &surface, surface_khr);
+        let (logical_device, graphics_queue) = Self::create_logical_device_with_graphics_queue(
+            &instance, 
+            &surface, 
+            surface_khr, 
+            physical_device);
 
         Ok(Engine {
             _entry: entry,
+            _physical_device: physical_device,
+            _graphics_queue: graphics_queue,
             instance,
             debug_report_callback,
-            _physical_device: physical_device,
+            surface,
+            surface_khr,
             logical_device,
-            _graphics_queue: graphics_queue,
         })
     }
 
@@ -107,11 +119,14 @@ impl Engine {
     }
 
     /// Pick an actual graphics card that exists on the machine.
-    fn pick_physical_device(instance: &Instance) -> PhysicalDevice {
+    fn pick_physical_device(
+        instance: &Instance,
+        surface: &Surface,
+        surface_khr: SurfaceKHR) -> PhysicalDevice {
         let devices = unsafe { instance.enumerate_physical_devices().unwrap() };
         let device = devices
             .into_iter()
-            .find(|device| Self::is_device_suitable(&instance, *device))
+            .find(|device| Self::is_device_suitable(&instance, &surface, surface_khr, *device))
             .expect("No suitable physical device!");
 
         let props = unsafe { instance.get_physical_device_properties(device) };
@@ -121,42 +136,92 @@ impl Engine {
         device
     }
 
-    /// Checks if the physical device can do rendering.
-    fn is_device_suitable(instance: &Instance, device: PhysicalDevice) -> bool {
-        Self::find_queue_families(instance, device).is_some()
+    /// Checks if the physical device can do rendering. Ensures that there is a graphics and present
+    /// queue index, which may be at different indices.
+    fn is_device_suitable(
+        instance: &Instance,
+        surface: &Surface,
+        surface_khr: SurfaceKHR,
+        device: PhysicalDevice) -> bool {
+        let (graphics, present) = Self::find_queue_families(instance, surface, surface_khr, device);
+        graphics.is_some() && present.is_some()
     }
 
-    /// Queues only support a subset of commands. Find the queue family which bests matches
-    /// our need to render graphics.
-    fn find_queue_families(instance: &Instance, device: PhysicalDevice) -> Option<usize> {
+    /// Queues only support a subset of commands. It finds a graphics queue and present queue that 
+    /// can present images to the surface that is created.
+    fn find_queue_families(
+        instance: &Instance,
+        surface: &Surface,
+        surface_khr: SurfaceKHR,
+        device: PhysicalDevice) -> (Option<u32>, Option<u32>) {
+        let mut graphics : Option<u32> = None;
+        let mut present : Option<u32> = None;
+
         let props = unsafe { instance.get_physical_device_queue_family_properties(device) };
-        props
-            .iter()
-            .enumerate()
-            .find(|(_, family)| {
-                family.queue_count > 0 && family.queue_flags.contains(QueueFlags::GRAPHICS)
-            })
-            .map(|(index, _)| index)
+
+        for (index, family) in props.iter().filter(|f| f.queue_count > 0).enumerate() {
+            let index = index as u32;
+
+            if family.queue_flags.contains(QueueFlags::GRAPHICS) && graphics.is_none() {
+                graphics = Some(index);
+            }
+
+            let present_support = unsafe { 
+                surface
+                    .get_physical_device_surface_support(device, index, surface_khr)
+                    .unwrap()
+            };
+
+            if present_support && present.is_none() {
+                present = Some(index);
+            }
+
+            if graphics.is_some() && present.is_some() {
+                break;
+            }
+        }
+
+        (graphics, present)
     }
 
     /// Create a logical device based on the validation layers that are enabled.
     /// The logical device will interact with the physical device (our discrete video card).
     fn create_logical_device_with_graphics_queue(
         instance: &Instance,
-        device: PhysicalDevice,
-    ) -> (Device, Queue) {
-        let queue_family_index = Self::find_queue_families(instance, device).unwrap() as u32;
+        surface: &Surface,
+        surface_khr: SurfaceKHR,
+        device: PhysicalDevice) -> (Device, Queue) {
+
+        let (graphics_index, present_index) = Self::find_queue_families(
+            instance, 
+            surface, 
+            surface_khr, 
+            device);
+
+        let graphics_family_index = graphics_index.unwrap();
+        let present_family_index = present_index.unwrap();
         let queue_priorities: [f32; 1] = [1.0f32];
-        let queue_create_info = [DeviceQueueCreateInfo::builder()
-            .queue_family_index(queue_family_index)
-            .queue_priorities(&queue_priorities)
-            .build()];
+
+        let queue_create_infos : Vec<DeviceQueueCreateInfo> = {
+            let mut indices : Vec<u32> = vec![graphics_family_index, present_family_index];
+            indices.dedup();
+
+            indices
+                .iter()
+                .map(|index| {
+                    DeviceQueueCreateInfo::builder()
+                        .queue_family_index(*index)
+                        .queue_priorities(&queue_priorities)
+                        .build()
+                })
+                .collect()
+        };
 
         let device_features = PhysicalDeviceFeatures::builder().build();
         let (_layer_names, layer_ptrs) = get_layer_names_and_pointers();
 
         let mut device_create_info_builder = DeviceCreateInfo::builder()
-            .queue_create_infos(&queue_create_info)
+            .queue_create_infos(&queue_create_infos)
             .enabled_features(&device_features);
 
         if ENABLE_VALIDATION_LAYERS {
@@ -170,7 +235,7 @@ impl Engine {
                 .expect("Failed to create logical device!")
         };
 
-        let graphics_queue = unsafe { device.get_device_queue(queue_family_index, 0) };
+        let graphics_queue = unsafe { device.get_device_queue(graphics_family_index, 0) };
         (device, graphics_queue)
     }
 }
@@ -180,6 +245,7 @@ impl Drop for Engine {
         log::info!("Releasing engine.");
         unsafe {
             self.logical_device.destroy_device(None);
+            self.surface.destroy_surface(self.surface_khr, None);
             if let Some((report, callback)) = self.debug_report_callback.take() {
                 report.destroy_debug_utils_messenger(callback, None);
             }
