@@ -1,11 +1,4 @@
-use ash::{
-    extensions::{ext::DebugUtils, khr::Surface},
-    vk::{
-        self, DebugUtilsMessengerEXT, DeviceCreateInfo, DeviceQueueCreateInfo, PhysicalDevice,
-        PhysicalDeviceFeatures, Queue, QueueFlags, SurfaceKHR,
-    },
-    Device, Entry, Instance,
-};
+use ash::{Device, Entry, Instance, extensions::{ext::DebugUtils, khr::Surface}, vk::{self, ColorSpaceKHR, DebugUtilsMessengerEXT, DeviceCreateInfo, DeviceQueueCreateInfo, Format, PhysicalDevice, PhysicalDeviceFeatures, Queue, QueueFlags, SurfaceFormatKHR, SurfaceKHR}};
 use std::{
     error::Error,
     ffi::{CStr, CString},
@@ -237,6 +230,25 @@ impl Engine {
 
         let graphics_queue = unsafe { device.get_device_queue(graphics_family_index, 0) };
         (device, graphics_queue)
+    }
+
+    /// Does exactly what it says, chooses the swap chain format based on whatever is available.
+    /// If R8G8R8A8 is available then it is selected.
+    fn choose_swapchain_surface_format(available_formats: &[SurfaceFormatKHR]) -> SurfaceFormatKHR {
+        if available_formats.len() == 1 && available_formats[0].format == Format::UNDEFINED {
+            return SurfaceFormatKHR {
+                format: Format::B8G8R8A8_UNORM,
+                color_space: ColorSpaceKHR::SRGB_NONLINEAR,
+            }
+        }
+
+        *available_formats
+            .iter()
+            .find(|format| {
+                format.format == vk::Format::B8G8R8_UNORM && 
+                    format.color_space == ColorSpaceKHR::SRGB_NONLINEAR
+            })
+            .unwrap_or(&available_formats[0])
     }
 }
 
