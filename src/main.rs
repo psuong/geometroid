@@ -1,3 +1,4 @@
+mod common;
 mod engine;
 
 use env_logger::{Builder, Target};
@@ -10,6 +11,7 @@ use winit::{
 };
 
 use crate::engine::Engine;
+use crate::common::{WIDTH, HEIGHT};
 
 fn init_logger(target: Target) {
     Builder::from_default_env()
@@ -24,7 +26,7 @@ fn main() {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
         .with_title("Geometroid")
-        .with_inner_size(PhysicalSize::new(800, 600))
+        .with_inner_size(PhysicalSize::new(WIDTH, HEIGHT))
         .build(&event_loop)
         .unwrap();
 

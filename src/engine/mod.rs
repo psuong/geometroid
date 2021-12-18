@@ -1,8 +1,20 @@
-use ash::{Device, Entry, Instance, extensions::{ext::DebugUtils, khr::Surface}, vk::{self, ColorSpaceKHR, DebugUtilsMessengerEXT, DeviceCreateInfo, DeviceQueueCreateInfo, Format, PhysicalDevice, PhysicalDeviceFeatures, Queue, QueueFlags, SurfaceFormatKHR, SurfaceKHR}};
+use ash::{
+    extensions::{
+        ext::DebugUtils,
+        khr::{Surface, Swapchain},
+    },
+    vk::{
+        self, ColorSpaceKHR, DebugUtilsMessengerEXT, DeviceCreateInfo, DeviceQueueCreateInfo,
+        Extent2D, Format, Image, PhysicalDevice, PhysicalDeviceFeatures, PresentModeKHR, Queue,
+        QueueFlags, SurfaceCapabilitiesKHR, SurfaceFormatKHR, SurfaceKHR, SwapchainKHR,
+    },
+    Device, Entry, Instance,
+};
 use std::{
     error::Error,
     ffi::{CStr, CString},
 };
+
 use winit::window::Window;
 
 mod debug;
@@ -11,6 +23,8 @@ mod utils;
 use debug::{
     get_layer_names_and_pointers, setup_debug_messenger, ENABLE_VALIDATION_LAYERS, REQUIRED_LAYERS,
 };
+
+use crate::{common::HEIGHT, WIDTH};
 
 pub struct Engine {
     _entry: Entry,
@@ -21,6 +35,8 @@ pub struct Engine {
     surface: Surface,
     surface_khr: SurfaceKHR,
     logical_device: Device,
+    swapchain: Swapchain,
+    swapchain_khr: SwapchainKHR,
 }
 
 impl Engine {
@@ -35,10 +51,18 @@ impl Engine {
 
         let physical_device = Self::pick_physical_device(&instance, &surface, surface_khr);
         let (logical_device, graphics_queue) = Self::create_logical_device_with_graphics_queue(
+            &instance,
+            &surface,
+            surface_khr,
+            physical_device,
+        );
+
+        let (swapchain, swapchain_khr, format, extent, images) = Self::create_swapchain_and_images(
             &instance, 
+            physical_device, 
+            &logical_device, 
             &surface, 
-            surface_khr, 
-            physical_device);
+            surface_khr);
 
         Ok(Engine {
             _entry: entry,
@@ -49,6 +73,8 @@ impl Engine {
             surface,
             surface_khr,
             logical_device,
+            swapchain,
+            swapchain_khr
         })
     }
 
@@ -115,7 +141,8 @@ impl Engine {
     fn pick_physical_device(
         instance: &Instance,
         surface: &Surface,
-        surface_khr: SurfaceKHR) -> PhysicalDevice {
+        surface_khr: SurfaceKHR,
+    ) -> PhysicalDevice {
         let devices = unsafe { instance.enumerate_physical_devices().unwrap() };
         let device = devices
             .into_iter()
@@ -135,20 +162,22 @@ impl Engine {
         instance: &Instance,
         surface: &Surface,
         surface_khr: SurfaceKHR,
-        device: PhysicalDevice) -> bool {
+        device: PhysicalDevice,
+    ) -> bool {
         let (graphics, present) = Self::find_queue_families(instance, surface, surface_khr, device);
         graphics.is_some() && present.is_some()
     }
 
-    /// Queues only support a subset of commands. It finds a graphics queue and present queue that 
+    /// Queues only support a subset of commands. It finds a graphics queue and present queue that
     /// can present images to the surface that is created.
     fn find_queue_families(
         instance: &Instance,
         surface: &Surface,
         surface_khr: SurfaceKHR,
-        device: PhysicalDevice) -> (Option<u32>, Option<u32>) {
-        let mut graphics : Option<u32> = None;
-        let mut present : Option<u32> = None;
+        device: PhysicalDevice,
+    ) -> (Option<u32>, Option<u32>) {
+        let mut graphics: Option<u32> = None;
+        let mut present: Option<u32> = None;
 
         let props = unsafe { instance.get_physical_device_queue_family_properties(device) };
 
@@ -159,7 +188,7 @@ impl Engine {
                 graphics = Some(index);
             }
 
-            let present_support = unsafe { 
+            let present_support = unsafe {
                 surface
                     .get_physical_device_surface_support(device, index, surface_khr)
                     .unwrap()
@@ -183,20 +212,17 @@ impl Engine {
         instance: &Instance,
         surface: &Surface,
         surface_khr: SurfaceKHR,
-        device: PhysicalDevice) -> (Device, Queue) {
-
-        let (graphics_index, present_index) = Self::find_queue_families(
-            instance, 
-            surface, 
-            surface_khr, 
-            device);
+        device: PhysicalDevice,
+    ) -> (Device, Queue) {
+        let (graphics_index, present_index) =
+            Self::find_queue_families(instance, surface, surface_khr, device);
 
         let graphics_family_index = graphics_index.unwrap();
         let present_family_index = present_index.unwrap();
         let queue_priorities: [f32; 1] = [1.0f32];
 
-        let queue_create_infos : Vec<DeviceQueueCreateInfo> = {
-            let mut indices : Vec<u32> = vec![graphics_family_index, present_family_index];
+        let queue_create_infos: Vec<DeviceQueueCreateInfo> = {
+            let mut indices: Vec<u32> = vec![graphics_family_index, present_family_index];
             indices.dedup();
 
             indices
@@ -239,16 +265,68 @@ impl Engine {
             return SurfaceFormatKHR {
                 format: Format::B8G8R8A8_UNORM,
                 color_space: ColorSpaceKHR::SRGB_NONLINEAR,
-            }
+            };
         }
 
         *available_formats
             .iter()
             .find(|format| {
-                format.format == vk::Format::B8G8R8_UNORM && 
-                    format.color_space == ColorSpaceKHR::SRGB_NONLINEAR
+                format.format == vk::Format::B8G8R8_UNORM
+                    && format.color_space == ColorSpaceKHR::SRGB_NONLINEAR
             })
             .unwrap_or(&available_formats[0])
+    }
+
+    /// Chooses the swapchain present mode. MAILBOX -> FIFO -> IMMEDIATE are the order of priority
+    /// when chosen.
+    ///
+    /// IMMEDIATE means that the moment the image is submitted to the screen, the image is shown
+    /// right away! May cause tearing.
+    ///
+    /// FIFO follows the queue priority. This is pretty much like most modern games with VSYNC.
+    /// Submit - if queue is full, wait until queue is emptied.
+    ///
+    /// MAILBOX is like a queue & immediate mode. If the presentation queue is filled to the brim,
+    /// then we just overwrite whatever is in queue.
+    fn choose_swapchain_surface_present_mode(
+        available_present_modes: &[PresentModeKHR],
+    ) -> PresentModeKHR {
+        if available_present_modes.contains(&PresentModeKHR::MAILBOX) {
+            PresentModeKHR::MAILBOX
+        } else if available_present_modes.contains(&PresentModeKHR::FIFO) {
+            PresentModeKHR::FIFO
+        } else {
+            PresentModeKHR::IMMEDIATE
+        }
+    }
+
+    /// Creates the swapchain extent, which is typically the resolution of the windowing surface.
+    /// I _think_ this is where - if I wanted to implement FSR, I can do half resolution and
+    /// upscale it.
+    /// TODO: Definitely try implementing FSR :)
+    fn choose_swapchain_extent(capabilities: SurfaceCapabilitiesKHR) -> Extent2D {
+        // Pick the animation studio.
+        if capabilities.current_extent.width != u32::MAX {
+            return capabilities.current_extent;
+        }
+
+        let min = capabilities.min_image_extent;
+        let max = capabilities.max_image_extent;
+
+        Extent2D {
+            width: WIDTH.min(max.width).max(min.width),
+            height: HEIGHT.min(max.height).max(min.height),
+        }
+    }
+
+    fn create_swapchain_and_images(
+        instance: &Instance,
+        physical_device: PhysicalDevice,
+        device: &Device,
+        surface: &Surface,
+        surface_khr: SurfaceKHR,
+    ) -> (Swapchain, SwapchainKHR, Format, Extent2D, Vec<Image>) {
+        todo!("Creating the swapchain is not implemented unfortunately!")
     }
 }
 
@@ -256,6 +334,7 @@ impl Drop for Engine {
     fn drop(&mut self) {
         log::info!("Releasing engine.");
         unsafe {
+            self.swapchain.destroy_swapchain(self.swapchain_khr, None);
             self.logical_device.destroy_device(None);
             self.surface.destroy_surface(self.surface_khr, None);
             if let Some((report, callback)) = self.debug_report_callback.take() {
