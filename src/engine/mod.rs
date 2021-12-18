@@ -24,7 +24,7 @@ use debug::{
     get_layer_names_and_pointers, setup_debug_messenger, ENABLE_VALIDATION_LAYERS, REQUIRED_LAYERS,
 };
 
-use crate::{common::HEIGHT, WIDTH};
+use crate::{WIDTH, common::HEIGHT, engine::utils::SwapchainSupportDetails};
 
 pub struct Engine {
     _entry: Entry,
@@ -326,6 +326,13 @@ impl Engine {
         surface: &Surface,
         surface_khr: SurfaceKHR,
     ) -> (Swapchain, SwapchainKHR, Format, Extent2D, Vec<Image>) {
+
+        let (capabilities, formats, present_mode) = SwapchainSupportDetails::query(
+            physical_device, 
+            surface, 
+            surface_khr);
+
+        let image_count = capabilities.len();
         todo!("Creating the swapchain is not implemented unfortunately!")
     }
 }
