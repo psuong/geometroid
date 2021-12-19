@@ -9,13 +9,13 @@ pub fn required_extension_names() -> Vec<*const i8> {
 }
 
 pub struct SwapchainSupportDetails {
-    capabilities: SurfaceCapabilitiesKHR,
-    formats: Vec<SurfaceFormatKHR>,
-    present_modes: Vec<PresentModeKHR>,
+    pub capabilities: SurfaceCapabilitiesKHR,
+    pub formats: Vec<SurfaceFormatKHR>,
+    pub present_modes: Vec<PresentModeKHR>,
 }
 
 impl SwapchainSupportDetails {
-    fn query(device: PhysicalDevice, surface: &Surface, surface_khr: SurfaceKHR) -> Self {
+    pub fn query(device: PhysicalDevice, surface: &Surface, surface_khr: SurfaceKHR) -> Self {
         let capabilities = unsafe {
             surface
                 .get_physical_device_surface_capabilities(device, surface_khr)

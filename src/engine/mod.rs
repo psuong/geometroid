@@ -327,12 +327,25 @@ impl Engine {
         surface_khr: SurfaceKHR,
     ) -> (Swapchain, SwapchainKHR, Format, Extent2D, Vec<Image>) {
 
-        let (capabilities, formats, present_mode) = SwapchainSupportDetails::query(
+        let details = SwapchainSupportDetails::query(
             physical_device, 
             surface, 
             surface_khr);
 
-        let image_count = capabilities.len();
+        let format = Self::choose_swapchain_surface_format(&details.formats);
+        let present_mode = Self::choose_swapchain_surface_present_mode(&details.present_modes);
+        let extent = Self::choose_swapchain_extent(&details.capabilities);
+
+        let image_count = {
+            let max = details.capabilities.max_image_count;
+            let mut preferred = details.capabilities.min_image_count + 1;
+            if max > 0 && preferred > max {
+                preferred = max;
+            }
+
+            preferred
+        };
+
         todo!("Creating the swapchain is not implemented unfortunately!")
     }
 }
