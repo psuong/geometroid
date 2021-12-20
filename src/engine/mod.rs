@@ -4,9 +4,10 @@ use ash::{
         khr::{Surface, Swapchain},
     },
     vk::{
-        self, ColorSpaceKHR, DebugUtilsMessengerEXT, DeviceCreateInfo, DeviceQueueCreateInfo,
-        Extent2D, Format, Image, PhysicalDevice, PhysicalDeviceFeatures, PresentModeKHR, Queue,
-        QueueFlags, SurfaceCapabilitiesKHR, SurfaceFormatKHR, SurfaceKHR, SwapchainKHR,
+        self, ColorSpaceKHR, CompositeAlphaFlagsKHR, DebugUtilsMessengerEXT, DeviceCreateInfo,
+        DeviceQueueCreateInfo, Extent2D, Format, Image, ImageUsageFlags, PhysicalDevice,
+        PhysicalDeviceFeatures, PresentModeKHR, Queue, QueueFlags,
+        SurfaceCapabilitiesKHR, SurfaceFormatKHR, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR,
     },
     Device, Entry, Instance,
 };
@@ -24,12 +25,16 @@ use debug::{
     get_layer_names_and_pointers, setup_debug_messenger, ENABLE_VALIDATION_LAYERS, REQUIRED_LAYERS,
 };
 
-use crate::{WIDTH, common::HEIGHT, engine::utils::SwapchainSupportDetails};
+use crate::{common::HEIGHT, engine::utils::SwapchainSupportDetails, WIDTH};
 
 pub struct Engine {
     _entry: Entry,
     _physical_device: PhysicalDevice,
     _graphics_queue: Queue,
+    _present_queue: Queue,
+    _swapchain_image_format: Format,
+    _swapchain_extent: Extent2D,
+    _images: Vec<Image>,
     instance: Instance,
     debug_report_callback: Option<(DebugUtils, DebugUtilsMessengerEXT)>,
     surface: Surface,
@@ -50,31 +55,37 @@ impl Engine {
             unsafe { ash_window::create_surface(&entry, &instance, _window, None).unwrap() };
 
         let physical_device = Self::pick_physical_device(&instance, &surface, surface_khr);
-        let (logical_device, graphics_queue) = Self::create_logical_device_with_graphics_queue(
+        let (logical_device, graphics_queue, present_queue) = Self::create_logical_device_with_graphics_queue(
             &instance,
             &surface,
             surface_khr,
             physical_device,
         );
 
+        // TODO: Fix the swapchain creation because it causes the program to panic.
         let (swapchain, swapchain_khr, format, extent, images) = Self::create_swapchain_and_images(
-            &instance, 
-            physical_device, 
-            &logical_device, 
-            &surface, 
-            surface_khr);
+            &instance,
+            physical_device,
+            &logical_device,
+            &surface,
+            surface_khr,
+        );
 
         Ok(Engine {
             _entry: entry,
             _physical_device: physical_device,
             _graphics_queue: graphics_queue,
+            _present_queue: present_queue,
+            _swapchain_image_format: format,
+            _swapchain_extent: extent,
+            _images: images,
             instance,
             debug_report_callback,
             surface,
             surface_khr,
             logical_device,
             swapchain,
-            swapchain_khr
+            swapchain_khr,
         })
     }
 
@@ -213,7 +224,7 @@ impl Engine {
         surface: &Surface,
         surface_khr: SurfaceKHR,
         device: PhysicalDevice,
-    ) -> (Device, Queue) {
+    ) -> (Device, Queue, Queue) {
         let (graphics_index, present_index) =
             Self::find_queue_families(instance, surface, surface_khr, device);
 
@@ -255,7 +266,8 @@ impl Engine {
         };
 
         let graphics_queue = unsafe { device.get_device_queue(graphics_family_index, 0) };
-        (device, graphics_queue)
+        let present_queue = unsafe { device.get_device_queue(present_family_index, 0) };
+        (device, graphics_queue, present_queue)
     }
 
     /// Does exactly what it says, chooses the swap chain format based on whatever is available.
@@ -304,7 +316,7 @@ impl Engine {
     /// I _think_ this is where - if I wanted to implement FSR, I can do half resolution and
     /// upscale it.
     /// TODO: Definitely try implementing FSR :)
-    fn choose_swapchain_extent(capabilities: SurfaceCapabilitiesKHR) -> Extent2D {
+    fn choose_swapchain_extent(capabilities: &SurfaceCapabilitiesKHR) -> Extent2D {
         // Pick the animation studio.
         if capabilities.current_extent.width != u32::MAX {
             return capabilities.current_extent;
@@ -326,16 +338,14 @@ impl Engine {
         surface: &Surface,
         surface_khr: SurfaceKHR,
     ) -> (Swapchain, SwapchainKHR, Format, Extent2D, Vec<Image>) {
-
-        let details = SwapchainSupportDetails::query(
-            physical_device, 
-            surface, 
-            surface_khr);
+        let details = SwapchainSupportDetails::query(physical_device, surface, surface_khr);
 
         let format = Self::choose_swapchain_surface_format(&details.formats);
         let present_mode = Self::choose_swapchain_surface_present_mode(&details.present_modes);
         let extent = Self::choose_swapchain_extent(&details.capabilities);
 
+        // When selecting the image count, a size of 1 may cause us to wait before displaying the
+        // second image. When we can use multiple images, we should try to.
         let image_count = {
             let max = details.capabilities.max_image_count;
             let mut preferred = details.capabilities.min_image_count + 1;
@@ -346,7 +356,49 @@ impl Engine {
             preferred
         };
 
-        todo!("Creating the swapchain is not implemented unfortunately!")
+        log::debug!(
+            "Creating swapchain. \n\tFormat: {:?}\n\tColorSpace: {:?}\n\tPresent Mode: {:?}\n\tExtent: {:?}\n\tImage Count: {:?}",
+            format.format,
+            format.color_space,
+            present_mode,
+            extent,
+            image_count
+        );
+
+        let (graphics, present) =
+            Self::find_queue_families(instance, surface, surface_khr, physical_device);
+        let families_indices = [graphics.unwrap(), present.unwrap()];
+
+        let create_info = {
+            let mut builder = SwapchainCreateInfoKHR::builder()
+                .surface(surface_khr)
+                .min_image_count(image_count)
+                .image_format(format.format)
+                .image_color_space(format.color_space)
+                .image_extent(extent)
+                .image_array_layers(1)
+                .image_usage(ImageUsageFlags::COLOR_ATTACHMENT);
+
+            builder = match (graphics, present) {
+                (Some(graphics), Some(present)) if graphics != present => builder
+                    .image_sharing_mode(vk::SharingMode::CONCURRENT)
+                    .queue_family_indices(&families_indices),
+                (Some(_), Some(_)) => builder.image_sharing_mode(vk::SharingMode::EXCLUSIVE),
+                _ => panic!(),
+            };
+
+            builder
+                .pre_transform(details.capabilities.current_transform)
+                .composite_alpha(CompositeAlphaFlagsKHR::OPAQUE)
+                .present_mode(present_mode)
+                .clipped(true)
+                .build()
+        };
+
+        let swapchain = Swapchain::new(instance, device);
+        let swapchain_khr = unsafe { swapchain.create_swapchain(&create_info, None).unwrap() };
+        let images = unsafe { swapchain.get_swapchain_images(swapchain_khr).unwrap() };
+        (swapchain, swapchain_khr, format.format, extent, images)
     }
 }
 
