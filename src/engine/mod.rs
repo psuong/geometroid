@@ -4,9 +4,9 @@ use ash::{
         khr::{Surface, Swapchain},
     },
     vk::{
-        self, ColorSpaceKHR, CompositeAlphaFlagsKHR, DebugUtilsMessengerEXT, DeviceCreateInfo,
+        self, ColorSpaceKHR, CompositeAlphaFlagsKHR, DeviceCreateInfo,
         DeviceQueueCreateInfo, Extent2D, Format, Image, ImageUsageFlags, PhysicalDevice,
-        PhysicalDeviceFeatures, PresentModeKHR, Queue, QueueFlags,
+        PhysicalDeviceFeatures, PresentModeKHR, Queue, QueueFlags, SharingMode,
         SurfaceCapabilitiesKHR, SurfaceFormatKHR, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR,
     },
     Device, Entry, Instance,
@@ -18,28 +18,27 @@ use std::{
 
 use winit::window::Window;
 
+mod context;
 mod debug;
 mod utils;
 
+use context::VkContext;
 use debug::{
     get_layer_names_and_pointers, setup_debug_messenger, ENABLE_VALIDATION_LAYERS, REQUIRED_LAYERS,
 };
+use utils::QueueFamiliesIndices;
 
 use crate::{common::HEIGHT, engine::utils::SwapchainSupportDetails, WIDTH};
 
 pub struct Engine {
-    _entry: Entry,
     _physical_device: PhysicalDevice,
     _graphics_queue: Queue,
     _present_queue: Queue,
     _swapchain_image_format: Format,
     _swapchain_extent: Extent2D,
     _images: Vec<Image>,
-    instance: Instance,
-    debug_report_callback: Option<(DebugUtils, DebugUtilsMessengerEXT)>,
-    surface: Surface,
+    vk_context: VkContext,
     surface_khr: SurfaceKHR,
-    logical_device: Device,
     swapchain: Swapchain,
     swapchain_khr: SwapchainKHR,
 }
@@ -54,36 +53,38 @@ impl Engine {
         let surface_khr =
             unsafe { ash_window::create_surface(&entry, &instance, _window, None).unwrap() };
 
-        let physical_device = Self::pick_physical_device(&instance, &surface, surface_khr);
-        let (logical_device, graphics_queue, present_queue) = Self::create_logical_device_with_graphics_queue(
-            &instance,
-            &surface,
-            surface_khr,
-            physical_device,
-        );
+        let (physical_device, queue_families_indices) = Self::pick_physical_device(&instance, &surface, surface_khr);
+        let (logical_device, graphics_queue, present_queue) = 
+            Self::create_logical_device_with_graphics_queue(
+                &instance,
+                physical_device,
+                queue_families_indices
+            );
 
-        // TODO: Fix the swapchain creation because it causes the program to panic.
+        let vk_context = VkContext::new(
+            entry, 
+            instance, 
+            debug_report_callback, 
+            surface,
+            surface_khr, 
+            physical_device, 
+            logical_device);
+
+        let dimensions = [WIDTH, HEIGHT];
         let (swapchain, swapchain_khr, format, extent, images) = Self::create_swapchain_and_images(
-            &instance,
-            physical_device,
-            &logical_device,
-            &surface,
-            surface_khr,
-        );
+            &vk_context, 
+            queue_families_indices, 
+            dimensions);
 
         Ok(Engine {
-            _entry: entry,
             _physical_device: physical_device,
             _graphics_queue: graphics_queue,
             _present_queue: present_queue,
             _swapchain_image_format: format,
             _swapchain_extent: extent,
             _images: images,
-            instance,
-            debug_report_callback,
-            surface,
+            vk_context,
             surface_khr,
-            logical_device,
             swapchain,
             swapchain_khr,
         })
@@ -153,7 +154,7 @@ impl Engine {
         instance: &Instance,
         surface: &Surface,
         surface_khr: SurfaceKHR,
-    ) -> PhysicalDevice {
+    ) -> (PhysicalDevice, QueueFamiliesIndices) {
         let devices = unsafe { instance.enumerate_physical_devices().unwrap() };
         let device = devices
             .into_iter()
@@ -164,7 +165,14 @@ impl Engine {
         log::info!("Selected physical device: {:?}", unsafe {
             CStr::from_ptr(props.device_name.as_ptr())
         });
-        device
+
+        let (graphics, present) = Self::find_queue_families(instance, surface, surface_khr, device);
+        let queue_families_indices = QueueFamiliesIndices {
+            graphics_index: graphics.unwrap(),
+            present_index: present.unwrap()
+        };
+
+        (device, queue_families_indices)
     }
 
     /// Checks if the physical device can do rendering. Ensures that there is a graphics and present
@@ -221,19 +229,16 @@ impl Engine {
     /// The logical device will interact with the physical device (our discrete video card).
     fn create_logical_device_with_graphics_queue(
         instance: &Instance,
-        surface: &Surface,
-        surface_khr: SurfaceKHR,
-        device: PhysicalDevice,
+        device: vk::PhysicalDevice,
+        queue_families_indices: QueueFamiliesIndices,
     ) -> (Device, Queue, Queue) {
-        let (graphics_index, present_index) =
-            Self::find_queue_families(instance, surface, surface_khr, device);
 
-        let graphics_family_index = graphics_index.unwrap();
-        let present_family_index = present_index.unwrap();
+        let graphics_family_index = queue_families_indices.graphics_index;
+        let present_family_index = queue_families_indices.present_index;
         let queue_priorities: [f32; 1] = [1.0f32];
 
         let queue_create_infos: Vec<DeviceQueueCreateInfo> = {
-            let mut indices: Vec<u32> = vec![graphics_family_index, present_family_index];
+            let mut indices = vec![graphics_family_index, present_family_index];
             indices.dedup();
 
             indices
@@ -247,11 +252,18 @@ impl Engine {
                 .collect()
         };
 
+        let device_extensions = Self::get_required_device_extensions();
+        let device_extension_ptrs = device_extensions
+            .iter()
+            .map(|ext| ext.as_ptr())
+            .collect::<Vec<_>>();
+
         let device_features = PhysicalDeviceFeatures::builder().build();
         let (_layer_names, layer_ptrs) = get_layer_names_and_pointers();
 
         let mut device_create_info_builder = DeviceCreateInfo::builder()
             .queue_create_infos(&queue_create_infos)
+            .enabled_extension_names(&device_extension_ptrs)
             .enabled_features(&device_features);
 
         if ENABLE_VALIDATION_LAYERS {
@@ -331,14 +343,19 @@ impl Engine {
         }
     }
 
+    fn get_required_device_extensions() -> [&'static CStr; 1] {
+        [Swapchain::name()]
+    }
+
     fn create_swapchain_and_images(
-        instance: &Instance,
-        physical_device: PhysicalDevice,
-        device: &Device,
-        surface: &Surface,
-        surface_khr: SurfaceKHR,
+        vk_context: &VkContext,
+        queue_families_indices: QueueFamiliesIndices,
+        dimensions: [u32; 2]
     ) -> (Swapchain, SwapchainKHR, Format, Extent2D, Vec<Image>) {
-        let details = SwapchainSupportDetails::query(physical_device, surface, surface_khr);
+        let details = SwapchainSupportDetails::query(
+            vk_context.physical_device(), 
+            vk_context.surface(), 
+            vk_context.surface_khr());
 
         let format = Self::choose_swapchain_surface_format(&details.formats);
         let present_mode = Self::choose_swapchain_surface_present_mode(&details.present_modes);
@@ -365,13 +382,13 @@ impl Engine {
             image_count
         );
 
-        let (graphics, present) =
-            Self::find_queue_families(instance, surface, surface_khr, physical_device);
-        let families_indices = [graphics.unwrap(), present.unwrap()];
+        let graphics = queue_families_indices.graphics_index;
+        let present = queue_families_indices.present_index;
+        let families_indices = [graphics, present];
 
         let create_info = {
             let mut builder = SwapchainCreateInfoKHR::builder()
-                .surface(surface_khr)
+                .surface(vk_context.surface_khr())
                 .min_image_count(image_count)
                 .image_format(format.format)
                 .image_color_space(format.color_space)
@@ -379,12 +396,12 @@ impl Engine {
                 .image_array_layers(1)
                 .image_usage(ImageUsageFlags::COLOR_ATTACHMENT);
 
-            builder = match (graphics, present) {
-                (Some(graphics), Some(present)) if graphics != present => builder
-                    .image_sharing_mode(vk::SharingMode::CONCURRENT)
-                    .queue_family_indices(&families_indices),
-                (Some(_), Some(_)) => builder.image_sharing_mode(vk::SharingMode::EXCLUSIVE),
-                _ => panic!(),
+            builder = if graphics != present {
+                builder
+                    .image_sharing_mode(SharingMode::CONCURRENT)
+                    .queue_family_indices(&families_indices)
+            } else {
+                builder.image_sharing_mode(SharingMode::EXCLUSIVE)
             };
 
             builder
@@ -395,7 +412,7 @@ impl Engine {
                 .build()
         };
 
-        let swapchain = Swapchain::new(instance, device);
+        let swapchain = Swapchain::new(vk_context.instance(), vk_context.device());
         let swapchain_khr = unsafe { swapchain.create_swapchain(&create_info, None).unwrap() };
         let images = unsafe { swapchain.get_swapchain_images(swapchain_khr).unwrap() };
         (swapchain, swapchain_khr, format.format, extent, images)
@@ -407,12 +424,6 @@ impl Drop for Engine {
         log::info!("Releasing engine.");
         unsafe {
             self.swapchain.destroy_swapchain(self.swapchain_khr, None);
-            self.logical_device.destroy_device(None);
-            self.surface.destroy_surface(self.surface_khr, None);
-            if let Some((report, callback)) = self.debug_report_callback.take() {
-                report.destroy_debug_utils_messenger(callback, None);
-            }
-            self.instance.destroy_instance(None);
         }
     }
 }
