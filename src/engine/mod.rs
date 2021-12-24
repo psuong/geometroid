@@ -4,11 +4,11 @@ use ash::{
         khr::{Surface, Swapchain},
     },
     vk::{
-        self, ColorSpaceKHR, ComponentMapping, ComponentSwizzle, CompositeAlphaFlagsKHR,
-        DeviceCreateInfo, DeviceQueueCreateInfo, Extent2D, Format, Image, ImageAspectFlags,
-        ImageSubresourceRange, ImageUsageFlags, ImageView, ImageViewCreateInfo, ImageViewType,
-        PhysicalDevice, PhysicalDeviceFeatures, PresentModeKHR, Queue, QueueFlags, SharingMode,
-        SurfaceCapabilitiesKHR, SurfaceFormatKHR, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR,
+        self, ComponentMapping, ComponentSwizzle, CompositeAlphaFlagsKHR, DeviceCreateInfo,
+        DeviceQueueCreateInfo, Extent2D, Format, Image, ImageAspectFlags, ImageSubresourceRange,
+        ImageUsageFlags, ImageView, ImageViewCreateInfo, ImageViewType, PhysicalDevice,
+        PhysicalDeviceFeatures, Queue, QueueFlags, SharingMode, SurfaceKHR, SwapchainCreateInfoKHR,
+        SwapchainKHR,
     },
     Device, Entry, Instance,
 };
@@ -288,67 +288,6 @@ impl Engine {
         (device, graphics_queue, present_queue)
     }
 
-    /// Does exactly what it says, chooses the swap chain format based on whatever is available.
-    /// If R8G8R8A8 is available then it is selected.
-    fn choose_swapchain_surface_format(available_formats: &[SurfaceFormatKHR]) -> SurfaceFormatKHR {
-        if available_formats.len() == 1 && available_formats[0].format == Format::UNDEFINED {
-            return SurfaceFormatKHR {
-                format: Format::B8G8R8A8_UNORM,
-                color_space: ColorSpaceKHR::SRGB_NONLINEAR,
-            };
-        }
-
-        *available_formats
-            .iter()
-            .find(|format| {
-                format.format == vk::Format::B8G8R8_UNORM
-                    && format.color_space == ColorSpaceKHR::SRGB_NONLINEAR
-            })
-            .unwrap_or(&available_formats[0])
-    }
-
-    /// Chooses the swapchain present mode. MAILBOX -> FIFO -> IMMEDIATE are the order of priority
-    /// when chosen.
-    ///
-    /// IMMEDIATE means that the moment the image is submitted to the screen, the image is shown
-    /// right away! May cause tearing.
-    ///
-    /// FIFO follows the queue priority. This is pretty much like most modern games with VSYNC.
-    /// Submit - if queue is full, wait until queue is emptied.
-    ///
-    /// MAILBOX is like a queue & immediate mode. If the presentation queue is filled to the brim,
-    /// then we just overwrite whatever is in queue.
-    fn choose_swapchain_surface_present_mode(
-        available_present_modes: &[PresentModeKHR],
-    ) -> PresentModeKHR {
-        if available_present_modes.contains(&PresentModeKHR::MAILBOX) {
-            PresentModeKHR::MAILBOX
-        } else if available_present_modes.contains(&PresentModeKHR::FIFO) {
-            PresentModeKHR::FIFO
-        } else {
-            PresentModeKHR::IMMEDIATE
-        }
-    }
-
-    /// Creates the swapchain extent, which is typically the resolution of the windowing surface.
-    /// I _think_ this is where - if I wanted to implement FSR, I can do half resolution and
-    /// upscale it.
-    /// TODO: Definitely try implementing FSR :)
-    fn choose_swapchain_extent(capabilities: &SurfaceCapabilitiesKHR) -> Extent2D {
-        // Pick the animation studio.
-        if capabilities.current_extent.width != u32::MAX {
-            return capabilities.current_extent;
-        }
-
-        let min = capabilities.min_image_extent;
-        let max = capabilities.max_image_extent;
-
-        Extent2D {
-            width: WIDTH.min(max.width).max(min.width),
-            height: HEIGHT.min(max.height).max(min.height),
-        }
-    }
-
     fn get_required_device_extensions() -> [&'static CStr; 1] {
         [Swapchain::name()]
     }
@@ -364,9 +303,11 @@ impl Engine {
             vk_context.surface_khr(),
         );
 
-        let format = Self::choose_swapchain_surface_format(&details.formats);
-        let present_mode = Self::choose_swapchain_surface_present_mode(&details.present_modes);
-        let extent = Self::choose_swapchain_extent(&details.capabilities);
+        let properties = details.get_ideal_sawpchain_properties([WIDTH, HEIGHT]);
+
+        let format = properties.format;
+        let present_mode = properties.present_mode;
+        let extent = properties.extent;
 
         // When selecting the image count, a size of 1 may cause us to wait before displaying the
         // second image. When we can use multiple images, we should try to.
