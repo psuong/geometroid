@@ -4,9 +4,10 @@ use ash::{
         khr::{Surface, Swapchain},
     },
     vk::{
-        self, ColorSpaceKHR, CompositeAlphaFlagsKHR, DeviceCreateInfo,
-        DeviceQueueCreateInfo, Extent2D, Format, Image, ImageUsageFlags, PhysicalDevice,
-        PhysicalDeviceFeatures, PresentModeKHR, Queue, QueueFlags, SharingMode,
+        self, ColorSpaceKHR, ComponentMapping, ComponentSwizzle, CompositeAlphaFlagsKHR,
+        DeviceCreateInfo, DeviceQueueCreateInfo, Extent2D, Format, Image, ImageAspectFlags,
+        ImageSubresourceRange, ImageUsageFlags, ImageView, ImageViewCreateInfo, ImageViewType,
+        PhysicalDevice, PhysicalDeviceFeatures, PresentModeKHR, Queue, QueueFlags, SharingMode,
         SurfaceCapabilitiesKHR, SurfaceFormatKHR, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR,
     },
     Device, Entry, Instance,
@@ -41,6 +42,7 @@ pub struct Engine {
     surface_khr: SurfaceKHR,
     swapchain: Swapchain,
     swapchain_khr: SwapchainKHR,
+    swapchain_image_views: Vec<ImageView>,
 }
 
 impl Engine {
@@ -53,28 +55,31 @@ impl Engine {
         let surface_khr =
             unsafe { ash_window::create_surface(&entry, &instance, _window, None).unwrap() };
 
-        let (physical_device, queue_families_indices) = Self::pick_physical_device(&instance, &surface, surface_khr);
-        let (logical_device, graphics_queue, present_queue) = 
+        let (physical_device, queue_families_indices) =
+            Self::pick_physical_device(&instance, &surface, surface_khr);
+        let (logical_device, graphics_queue, present_queue) =
             Self::create_logical_device_with_graphics_queue(
                 &instance,
                 physical_device,
-                queue_families_indices
+                queue_families_indices,
             );
 
         let vk_context = VkContext::new(
-            entry, 
-            instance, 
-            debug_report_callback, 
+            entry,
+            instance,
+            debug_report_callback,
             surface,
-            surface_khr, 
-            physical_device, 
-            logical_device);
+            surface_khr,
+            physical_device,
+            logical_device,
+        );
 
         let dimensions = [WIDTH, HEIGHT];
-        let (swapchain, swapchain_khr, format, extent, images) = Self::create_swapchain_and_images(
-            &vk_context, 
-            queue_families_indices, 
-            dimensions);
+        let (swapchain, swapchain_khr, format, extent, images) =
+            Self::create_swapchain_and_images(&vk_context, queue_families_indices, dimensions);
+
+        let swapchain_image_views =
+            Self::create_swapchain_image_views(vk_context.device(), &images, format);
 
         Ok(Engine {
             _physical_device: physical_device,
@@ -87,6 +92,7 @@ impl Engine {
             surface_khr,
             swapchain,
             swapchain_khr,
+            swapchain_image_views,
         })
     }
 
@@ -169,7 +175,7 @@ impl Engine {
         let (graphics, present) = Self::find_queue_families(instance, surface, surface_khr, device);
         let queue_families_indices = QueueFamiliesIndices {
             graphics_index: graphics.unwrap(),
-            present_index: present.unwrap()
+            present_index: present.unwrap(),
         };
 
         (device, queue_families_indices)
@@ -232,7 +238,6 @@ impl Engine {
         device: vk::PhysicalDevice,
         queue_families_indices: QueueFamiliesIndices,
     ) -> (Device, Queue, Queue) {
-
         let graphics_family_index = queue_families_indices.graphics_index;
         let present_family_index = queue_families_indices.present_index;
         let queue_priorities: [f32; 1] = [1.0f32];
@@ -252,6 +257,7 @@ impl Engine {
                 .collect()
         };
 
+        // Grab the device extensions so that we can build the swapchain
         let device_extensions = Self::get_required_device_extensions();
         let device_extension_ptrs = device_extensions
             .iter()
@@ -350,12 +356,13 @@ impl Engine {
     fn create_swapchain_and_images(
         vk_context: &VkContext,
         queue_families_indices: QueueFamiliesIndices,
-        dimensions: [u32; 2]
+        dimensions: [u32; 2],
     ) -> (Swapchain, SwapchainKHR, Format, Extent2D, Vec<Image>) {
         let details = SwapchainSupportDetails::query(
-            vk_context.physical_device(), 
-            vk_context.surface(), 
-            vk_context.surface_khr());
+            vk_context.physical_device(),
+            vk_context.surface(),
+            vk_context.surface_khr(),
+        );
 
         let format = Self::choose_swapchain_surface_format(&details.formats);
         let present_mode = Self::choose_swapchain_surface_present_mode(&details.present_modes);
@@ -417,12 +424,53 @@ impl Engine {
         let images = unsafe { swapchain.get_swapchain_images(swapchain_khr).unwrap() };
         (swapchain, swapchain_khr, format.format, extent, images)
     }
+
+    /// Creates a VKImageView so that we can use VKImage in the render pipeline. Image Views
+    /// describe how to access the image and which part of the images we can access. E.g. depth maps
+    /// don't need to be mipmapped since it's just a single view of the entire screen.
+    fn create_swapchain_image_views(
+        device: &Device,
+        swapchain_images: &[vk::Image],
+        swapchain_format: Format,
+    ) -> Vec<ImageView> {
+        swapchain_images
+            .into_iter()
+            .map(|image| {
+                let create_info = ImageViewCreateInfo::builder()
+                    .image(*image)
+                    .view_type(ImageViewType::TYPE_2D) // We can use 3D or 1D textures
+                    .format(swapchain_format)
+                    .components(ComponentMapping {
+                        r: ComponentSwizzle::IDENTITY,
+                        b: ComponentSwizzle::IDENTITY,
+                        g: ComponentSwizzle::IDENTITY,
+                        a: ComponentSwizzle::IDENTITY,
+                    })
+                    .subresource_range(ImageSubresourceRange {
+                        // Describes the image's purpose
+                        aspect_mask: ImageAspectFlags::COLOR,
+                        base_mip_level: 0,
+                        level_count: 1,
+                        base_array_layer: 0,
+                        layer_count: 1,
+                    })
+                    .build();
+
+                unsafe { device.create_image_view(&create_info, None).unwrap() }
+            })
+            .collect::<Vec<_>>()
+    }
 }
 
 impl Drop for Engine {
     fn drop(&mut self) {
         log::info!("Releasing engine.");
+
+        let device = self.vk_context.device();
         unsafe {
+            self.swapchain_image_views
+                .iter()
+                .for_each(|v| device.destroy_image_view(*v, None));
             self.swapchain.destroy_swapchain(self.swapchain_khr, None);
         }
     }
