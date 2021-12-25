@@ -21,6 +21,7 @@ use winit::window::Window;
 
 mod context;
 mod debug;
+mod shader_utils;
 mod utils;
 
 use context::VkContext;
