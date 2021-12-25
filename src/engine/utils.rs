@@ -11,22 +11,23 @@ pub fn required_extension_names() -> Vec<*const i8> {
     vec![Surface::name().as_ptr(), Win32Surface::name().as_ptr()]
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct QueueFamiliesIndices {
     pub graphics_index: u32,
     pub present_index: u32,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct SwapchainProperties {
+    pub format: SurfaceFormatKHR,
+    pub present_mode: PresentModeKHR,
+    pub extent: Extent2D
 }
 
 pub struct SwapchainSupportDetails {
     pub capabilities: SurfaceCapabilitiesKHR,
     pub formats: Vec<SurfaceFormatKHR>,
     pub present_modes: Vec<PresentModeKHR>,
-}
-
-pub struct SwapchainProperties {
-    pub format: SurfaceFormatKHR,
-    pub present_mode: PresentModeKHR,
-    pub extent: Extent2D
 }
 
 impl SwapchainSupportDetails {
@@ -56,7 +57,7 @@ impl SwapchainSupportDetails {
         }
     }
 
-    pub fn get_ideal_sawpchain_properties(
+    pub fn get_ideal_swapchain_properties(
         &self,
         preferred_dimensions: [u32; 2],
     ) -> SwapchainProperties {

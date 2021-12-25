@@ -1,16 +1,19 @@
 use crate::engine::shader_utils::read_shader_from_file;
 
+use ash::vk::FrontFace;
 use ash::{
     extensions::{
         ext::DebugUtils,
         khr::{Surface, Swapchain},
     },
     vk::{
-        self, ComponentMapping, ComponentSwizzle, CompositeAlphaFlagsKHR, DeviceCreateInfo,
-        DeviceQueueCreateInfo, Extent2D, Format, Image, ImageAspectFlags, ImageSubresourceRange,
-        ImageUsageFlags, ImageView, ImageViewCreateInfo, ImageViewType, PhysicalDevice,
-        PhysicalDeviceFeatures, Queue, QueueFlags, SharingMode, SurfaceKHR, SwapchainCreateInfoKHR,
-        SwapchainKHR,
+        self, ComponentMapping, ComponentSwizzle, CompositeAlphaFlagsKHR, CullModeFlags,
+        DeviceCreateInfo, DeviceQueueCreateInfo, Image, ImageAspectFlags, ImageSubresourceRange,
+        ImageUsageFlags, ImageView, ImageViewCreateInfo, ImageViewType, Offset2D, PhysicalDevice,
+        PhysicalDeviceFeatures, PipelineInputAssemblyStateCreateInfo,
+        PipelineRasterizationStateCreateInfo, PipelineVertexInputStateCreateInfo,
+        PipelineViewportStateCreateInfo, PolygonMode, PrimitiveTopology, Queue, QueueFlags, Rect2D,
+        SharingMode, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR, Viewport,
     },
     Device, Entry, Instance,
 };
@@ -34,20 +37,19 @@ use utils::QueueFamiliesIndices;
 
 use crate::{common::HEIGHT, engine::utils::SwapchainSupportDetails, WIDTH};
 
-use self::shader_utils::create_shader_module;
+use self::{shader_utils::create_shader_module, utils::SwapchainProperties};
 
 pub struct Engine {
     _physical_device: PhysicalDevice,
     _graphics_queue: Queue,
     _present_queue: Queue,
-    _swapchain_image_format: Format,
-    _swapchain_extent: Extent2D,
     _images: Vec<Image>,
     vk_context: VkContext,
     surface_khr: SurfaceKHR,
     swapchain: Swapchain,
     swapchain_khr: SwapchainKHR,
     swapchain_image_views: Vec<ImageView>,
+    swapchain_properties: SwapchainProperties,
 }
 
 impl Engine {
@@ -80,32 +82,29 @@ impl Engine {
         );
 
         let dimensions = [WIDTH, HEIGHT];
-        let (swapchain, swapchain_khr, format, extent, images) =
+        let (swapchain, swapchain_khr, properties, images) =
             Self::create_swapchain_and_images(&vk_context, queue_families_indices, dimensions);
 
         let swapchain_image_views =
-            Self::create_swapchain_image_views(vk_context.device(), &images, format);
+            Self::create_swapchain_image_views(vk_context.device(), &images, properties);
 
-        let _pipeline = Self::create_pipeline(vk_context.device());
+        let _pipeline = Self::create_pipeline(vk_context.device(), properties);
 
         Ok(Engine {
             _physical_device: physical_device,
             _graphics_queue: graphics_queue,
             _present_queue: present_queue,
-            _swapchain_image_format: format,
-            _swapchain_extent: extent,
             _images: images,
             vk_context,
             surface_khr,
             swapchain,
             swapchain_khr,
             swapchain_image_views,
+            swapchain_properties: properties,
         })
     }
 
-    pub fn update(&mut self) {
-
-    }
+    pub fn update(&mut self) {}
 
     fn create_instance(entry: &Entry) -> Result<Instance, Box<dyn Error>> {
         let app_name = CString::new("Geometroid").unwrap();
@@ -303,14 +302,14 @@ impl Engine {
         vk_context: &VkContext,
         queue_families_indices: QueueFamiliesIndices,
         dimensions: [u32; 2],
-    ) -> (Swapchain, SwapchainKHR, Format, Extent2D, Vec<Image>) {
+    ) -> (Swapchain, SwapchainKHR, SwapchainProperties, Vec<Image>) {
         let details = SwapchainSupportDetails::query(
             vk_context.physical_device(),
             vk_context.surface(),
             vk_context.surface_khr(),
         );
 
-        let properties = details.get_ideal_sawpchain_properties(dimensions);
+        let properties = details.get_ideal_swapchain_properties(dimensions);
 
         let format = properties.format;
         let present_mode = properties.present_mode;
@@ -370,7 +369,7 @@ impl Engine {
         let swapchain = Swapchain::new(vk_context.instance(), vk_context.device());
         let swapchain_khr = unsafe { swapchain.create_swapchain(&create_info, None).unwrap() };
         let images = unsafe { swapchain.get_swapchain_images(swapchain_khr).unwrap() };
-        (swapchain, swapchain_khr, format.format, extent, images)
+        (swapchain, swapchain_khr, properties, images)
     }
 
     /// Creates a VKImageView so that we can use VKImage in the render pipeline. Image Views
@@ -379,7 +378,7 @@ impl Engine {
     fn create_swapchain_image_views(
         device: &Device,
         swapchain_images: &[vk::Image],
-        swapchain_format: Format,
+        swapchain_properties: SwapchainProperties,
     ) -> Vec<ImageView> {
         swapchain_images
             .into_iter()
@@ -387,7 +386,7 @@ impl Engine {
                 let create_info = ImageViewCreateInfo::builder()
                     .image(*image)
                     .view_type(ImageViewType::TYPE_2D) // We can use 3D or 1D textures
-                    .format(swapchain_format)
+                    .format(swapchain_properties.format.format)
                     .components(ComponentMapping {
                         r: ComponentSwizzle::IDENTITY,
                         b: ComponentSwizzle::IDENTITY,
@@ -409,15 +408,75 @@ impl Engine {
             .collect::<Vec<_>>()
     }
 
-    fn create_pipeline(device: &Device) {
+    fn create_pipeline(device: &Device, swapchain_properties: SwapchainProperties) {
         // TODO: Load through a config file to make this work?
-        let vert_source = 
-            read_shader_from_file("D:/Documents/Projects/Rust/geometroid/src/shaders/shader.vert.spv");
-        let frag_source = 
-            read_shader_from_file("D:/Documents/Projects/Rust/geometroid/src/shaders/shader.frag.spv");
+        let vert_source = read_shader_from_file(
+            "D:/Documents/Projects/Rust/geometroid/src/shaders/shader.vert.spv",
+        );
+        let frag_source = read_shader_from_file(
+            "D:/Documents/Projects/Rust/geometroid/src/shaders/shader.frag.spv",
+        );
 
         let vertex_shader_module = create_shader_module(device, &vert_source);
         let fragment_shader_module = create_shader_module(device, &frag_source);
+
+        // Describes the layout of the vertex data.
+        // TODO: Uncomment when I create a mesh struct.
+        let _vertex_input_create_info = PipelineVertexInputStateCreateInfo::builder()
+            // .vertex_binding_descriptions(vertex_binding_descriptions)
+            // .vertex_attribute_descriptions(vertex_attribute_descriptions)
+            .build();
+
+        // Describes the kind of input geometry that will be drawn from the vertices and if primtive
+        // restart is enabled.
+        // Reusing vertices is a pretty standard optimization, so primtive restart
+        let _input_assembly_create_info = PipelineInputAssemblyStateCreateInfo::builder()
+            .topology(PrimitiveTopology::TRIANGLE_LIST)
+            .primitive_restart_enable(false)
+            .build();
+
+        let viewport = Viewport {
+            x: 0.0,
+            y: 0.0,
+            width: swapchain_properties.extent.width as _,
+            height: swapchain_properties.extent.height as _,
+            min_depth: 0.0,
+            max_depth: 1.0,
+        };
+
+        let viewports = [viewport];
+        let scissor = Rect2D {
+            offset: Offset2D { x: 0, y: 0 },
+            extent: swapchain_properties.extent,
+        };
+        let scissors = [scissor];
+
+        let _viewport_create_info = PipelineViewportStateCreateInfo::builder()
+            .viewports(&viewports)
+            .scissors(&scissors)
+            .build();
+
+        let _rasterizer_create_info = PipelineRasterizationStateCreateInfo::builder()
+            .depth_clamp_enable(false)
+            .rasterizer_discard_enable(false)
+            .polygon_mode(PolygonMode::FILL)
+            .line_width(1.0)
+            .cull_mode(CullModeFlags::BACK)
+            .front_face(FrontFace::CLOCKWISE)
+            .depth_bias_enable(false)
+            .depth_bias_constant_factor(0.0)
+            .depth_bias_clamp(0.0)
+            .depth_bias_slope_factor(0.0)
+            .build();
+
+        let _multisampling_create_info = vk::PipelineMultisampleStateCreateInfo::builder()
+            .sample_shading_enable(false)
+            .rasterization_samples(vk::SampleCountFlags::TYPE_1)
+            .min_sample_shading(1.0)
+            // .sample_mask() // null
+            .alpha_to_coverage_enable(false)
+            .alpha_to_one_enable(false)
+            .build();
 
         unsafe {
             device.destroy_shader_module(vertex_shader_module, None);
