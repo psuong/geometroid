@@ -4,3 +4,4 @@ root = true
 indent_style = space
 indent_space = 4
 max_line_length = 100
+end_of_line = lf

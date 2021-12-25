@@ -35,9 +35,8 @@ use debug::{
 };
 use utils::QueueFamiliesIndices;
 
-use crate::{common::HEIGHT, engine::utils::SwapchainSupportDetails, WIDTH};
-
 use self::{shader_utils::create_shader_module, utils::SwapchainProperties};
+use crate::{common::HEIGHT, engine::utils::SwapchainSupportDetails, WIDTH};
 
 pub struct Engine {
     _physical_device: PhysicalDevice,
@@ -334,7 +333,7 @@ impl Engine {
             present_mode,
             extent,
             image_count
-        );
+            );
 
         let graphics = queue_families_indices.graphics_index;
         let present = queue_families_indices.present_index;
@@ -456,6 +455,11 @@ impl Engine {
             .scissors(&scissors)
             .build();
 
+        // Can perform depth testing/face culling/scissor test at this stage.
+        // Takes the geometry that is shaped by the vertices & turns it into a fragments that can be
+        // colored.
+        // Can configure to output fragments that fill entire polygons or just the edges (wireframe
+        // shading).
         let _rasterizer_create_info = PipelineRasterizationStateCreateInfo::builder()
             .depth_clamp_enable(false)
             .rasterizer_discard_enable(false)
@@ -467,8 +471,10 @@ impl Engine {
             .depth_bias_constant_factor(0.0)
             .depth_bias_clamp(0.0)
             .depth_bias_slope_factor(0.0)
+            .depth_clamp_enable(false) // Clamp anything that bleeds outside of 0.0 - 1.0 range
             .build();
 
+        // An easy way to do some kind of anti-aliasing.
         let _multisampling_create_info = vk::PipelineMultisampleStateCreateInfo::builder()
             .sample_shading_enable(false)
             .rasterization_samples(vk::SampleCountFlags::TYPE_1)
@@ -477,6 +483,8 @@ impl Engine {
             .alpha_to_coverage_enable(false)
             .alpha_to_one_enable(false)
             .build();
+
+        // TODO: Add depth & stencil testing here.
 
         unsafe {
             device.destroy_shader_module(vertex_shader_module, None);

@@ -10,8 +10,8 @@ use winit::{
     window::WindowBuilder,
 };
 
+use crate::common::{HEIGHT, WIDTH};
 use crate::engine::Engine;
-use crate::common::{WIDTH, HEIGHT};
 
 fn init_logger(target: Target) {
     Builder::from_default_env()
@@ -40,7 +40,7 @@ fn main() {
         match event {
             Event::MainEventsCleared => {
                 engine.update();
-            },
+            }
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
                 WindowEvent::Resized { .. } => log::debug!("Resize not implemented!"),
