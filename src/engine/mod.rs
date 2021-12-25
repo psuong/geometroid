@@ -303,7 +303,7 @@ impl Engine {
             vk_context.surface_khr(),
         );
 
-        let properties = details.get_ideal_sawpchain_properties([WIDTH, HEIGHT]);
+        let properties = details.get_ideal_sawpchain_properties(dimensions);
 
         let format = properties.format;
         let present_mode = properties.present_mode;
