@@ -1,3 +1,5 @@
+use crate::engine::shader_utils::read_shader_from_file;
+
 use ash::{
     extensions::{
         ext::DebugUtils,
@@ -31,6 +33,8 @@ use debug::{
 use utils::QueueFamiliesIndices;
 
 use crate::{common::HEIGHT, engine::utils::SwapchainSupportDetails, WIDTH};
+
+use self::shader_utils::create_shader_module;
 
 pub struct Engine {
     _physical_device: PhysicalDevice,
@@ -82,6 +86,8 @@ impl Engine {
         let swapchain_image_views =
             Self::create_swapchain_image_views(vk_context.device(), &images, format);
 
+        let _pipeline = Self::create_pipeline(vk_context.device());
+
         Ok(Engine {
             _physical_device: physical_device,
             _graphics_queue: graphics_queue,
@@ -98,7 +104,7 @@ impl Engine {
     }
 
     pub fn update(&mut self) {
-        log::info!("Running engine");
+
     }
 
     fn create_instance(entry: &Entry) -> Result<Instance, Box<dyn Error>> {
@@ -401,6 +407,22 @@ impl Engine {
                 unsafe { device.create_image_view(&create_info, None).unwrap() }
             })
             .collect::<Vec<_>>()
+    }
+
+    fn create_pipeline(device: &Device) {
+        // TODO: Load through a config file to make this work?
+        let vert_source = 
+            read_shader_from_file("D:/Documents/Projects/Rust/geometroid/src/shaders/shader.vert.spv");
+        let frag_source = 
+            read_shader_from_file("D:/Documents/Projects/Rust/geometroid/src/shaders/shader.frag.spv");
+
+        let vertex_shader_module = create_shader_module(device, &vert_source);
+        let fragment_shader_module = create_shader_module(device, &frag_source);
+
+        unsafe {
+            device.destroy_shader_module(vertex_shader_module, None);
+            device.destroy_shader_module(fragment_shader_module, None);
+        };
     }
 }
 

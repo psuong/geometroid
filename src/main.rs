@@ -32,6 +32,8 @@ fn main() {
 
     let mut engine = Engine::new(&window).unwrap();
 
+    println!("{:?}", std::env::current_exe());
+
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
 
