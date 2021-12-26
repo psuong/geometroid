@@ -1,6 +1,6 @@
 use crate::engine::shader_utils::read_shader_from_file;
 
-use ash::vk::FrontFace;
+use ash::vk::{BlendFactor, BlendOp, ColorComponentFlags, FrontFace, LogicOp, PipelineColorBlendAttachmentState, PipelineColorBlendAttachmentStateBuilder, PipelineColorBlendStateCreateInfo};
 use ash::{
     extensions::{
         ext::DebugUtils,
@@ -482,6 +482,25 @@ impl Engine {
             // .sample_mask() // null
             .alpha_to_coverage_enable(false)
             .alpha_to_one_enable(false)
+            .build();
+
+        let color_blend_attachment = PipelineColorBlendAttachmentState::builder()
+            .color_write_mask(ColorComponentFlags::all())
+            .blend_enable(false)
+            .src_color_blend_factor(BlendFactor::ONE)
+            .dst_color_blend_factor(BlendFactor::ZERO)
+            .color_blend_op(BlendOp::ADD)
+            .src_alpha_blend_factor(BlendFactor::ONE)
+            .dst_alpha_blend_factor(BlendFactor::ZERO)
+            .alpha_blend_op(BlendOp::ADD)
+            .build();
+        let color_blend_attachments = [color_blend_attachment];
+
+        let _color_blending_info = PipelineColorBlendStateCreateInfo::builder()
+            .logic_op_enable(false)
+            .logic_op(LogicOp::COPY)
+            .attachments(&color_blend_attachments)
+            .blend_constants([0.0, 0.0, 0.0, 0.0])
             .build();
 
         // TODO: Add depth & stencil testing here.
