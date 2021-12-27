@@ -1,10 +1,6 @@
 use crate::engine::shader_utils::read_shader_from_file;
 
-use ash::vk::{
-    BlendFactor, BlendOp, ColorComponentFlags, FrontFace, LogicOp,
-    PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineLayout,
-    PipelineLayoutCreateInfo,
-};
+use ash::vk::{AttachmentDescription, AttachmentLoadOp, AttachmentStoreOp, BlendFactor, BlendOp, ColorComponentFlags, FrontFace, ImageLayout, LogicOp, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo, RenderPass, SampleCountFlags};
 use ash::{
     extensions::{
         ext::DebugUtils,
@@ -533,6 +529,21 @@ impl Engine {
         };
 
         pipeline_layout
+    }
+
+    fn create_render_pass(
+        device: &Device, swapchain_properties: SwapchainProperties) -> RenderPass {
+        let attachment_desc = AttachmentDescription::builder()
+            .format(swapchain_properties.format.format)
+            .samples(SampleCountFlags::TYPE_1)
+            .load_op(AttachmentLoadOp::CLEAR)
+            .store_op(AttachmentStoreOp::STORE)
+            .initial_layout(ImageLayout::UNDEFINED)
+            .final_layout(ImageLayout::PRESENT_SRC_KHR)
+            .build();
+        let attachment_descs = [attachment_desc];
+
+        todo!("Implement the attachment refs and subpasses");
     }
 }
 
