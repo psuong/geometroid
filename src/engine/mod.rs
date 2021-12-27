@@ -2,8 +2,8 @@ use crate::engine::shader_utils::read_shader_from_file;
 
 use ash::vk::{
     BlendFactor, BlendOp, ColorComponentFlags, FrontFace, LogicOp,
-    PipelineColorBlendAttachmentState,
-    PipelineColorBlendStateCreateInfo,
+    PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineLayout,
+    PipelineLayoutCreateInfo,
 };
 use ash::{
     extensions::{
@@ -53,6 +53,7 @@ pub struct Engine {
     swapchain_khr: SwapchainKHR,
     swapchain_image_views: Vec<ImageView>,
     swapchain_properties: SwapchainProperties,
+    pipeline_layout: PipelineLayout
 }
 
 impl Engine {
@@ -91,7 +92,7 @@ impl Engine {
         let swapchain_image_views =
             Self::create_swapchain_image_views(vk_context.device(), &images, properties);
 
-        let _pipeline = Self::create_pipeline(vk_context.device(), properties);
+        let pipeline = Self::create_pipeline(vk_context.device(), properties);
 
         Ok(Engine {
             _physical_device: physical_device,
@@ -104,6 +105,7 @@ impl Engine {
             swapchain_khr,
             swapchain_image_views,
             swapchain_properties: properties,
+            pipeline_layout: pipeline
         })
     }
 
@@ -337,7 +339,7 @@ impl Engine {
             present_mode,
             extent,
             image_count
-            );
+        );
 
         let graphics = queue_families_indices.graphics_index;
         let present = queue_families_indices.present_index;
@@ -411,7 +413,10 @@ impl Engine {
             .collect::<Vec<_>>()
     }
 
-    fn create_pipeline(device: &Device, swapchain_properties: SwapchainProperties) {
+    fn create_pipeline(
+        device: &Device,
+        swapchain_properties: SwapchainProperties,
+    ) -> PipelineLayout {
         // TODO: Load through a config file to make this work?
         let vert_source = read_shader_from_file(
             "D:/Documents/Projects/Rust/geometroid/src/shaders/shader.vert.spv",
@@ -509,10 +514,25 @@ impl Engine {
 
         // TODO: Add depth & stencil testing here.
 
+        let pipeline_layout = {
+            let pipeline_layout_info = PipelineLayoutCreateInfo::builder()
+                // .set_layouts(set_layouts)
+                // .push_constant_ranges(push_constant_ranges)
+                .build();
+
+            unsafe {
+                device
+                    .create_pipeline_layout(&pipeline_layout_info, None)
+                    .unwrap()
+            }
+        };
+
         unsafe {
             device.destroy_shader_module(vertex_shader_module, None);
             device.destroy_shader_module(fragment_shader_module, None);
         };
+
+        pipeline_layout
     }
 }
 
@@ -522,6 +542,7 @@ impl Drop for Engine {
 
         let device = self.vk_context.device();
         unsafe {
+            device.destroy_pipeline_layout(self.pipeline_layout, None);
             self.swapchain_image_views
                 .iter()
                 .for_each(|v| device.destroy_image_view(*v, None));

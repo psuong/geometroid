@@ -21,7 +21,7 @@ pub struct QueueFamiliesIndices {
 pub struct SwapchainProperties {
     pub format: SurfaceFormatKHR,
     pub present_mode: PresentModeKHR,
-    pub extent: Extent2D
+    pub extent: Extent2D,
 }
 
 pub struct SwapchainSupportDetails {
@@ -60,7 +60,7 @@ impl SwapchainSupportDetails {
     pub fn get_ideal_swapchain_properties(
         &self,
         preferred_dimensions: [u32; 2],
-        ) -> SwapchainProperties {
+    ) -> SwapchainProperties {
         let format = Self::choose_swapchain_surface_format(&self.formats);
         let present_mode = Self::choose_swapchain_surface_present_mode(&self.present_modes);
         let extent = Self::choose_swapchain_extent(&self.capabilities, &preferred_dimensions);
@@ -87,7 +87,7 @@ impl SwapchainSupportDetails {
                 format.format == Format::B8G8R8_UNORM
                     && format.color_space == ColorSpaceKHR::SRGB_NONLINEAR
             })
-        .unwrap_or(&available_formats[0])
+            .unwrap_or(&available_formats[0])
     }
 
     /// Chooses the swapchain present mode. MAILBOX -> FIFO -> IMMEDIATE are the order of priority
@@ -103,7 +103,7 @@ impl SwapchainSupportDetails {
     /// then we just overwrite whatever is in queue.
     fn choose_swapchain_surface_present_mode(
         available_present_modes: &[PresentModeKHR],
-        ) -> PresentModeKHR {
+    ) -> PresentModeKHR {
         if available_present_modes.contains(&PresentModeKHR::MAILBOX) {
             PresentModeKHR::MAILBOX
         } else if available_present_modes.contains(&PresentModeKHR::FIFO) {
@@ -118,10 +118,9 @@ impl SwapchainSupportDetails {
     /// upscale it.
     /// TODO: Definitely try implementing FSR :)
     fn choose_swapchain_extent(
-        capabilities: &SurfaceCapabilitiesKHR, 
+        capabilities: &SurfaceCapabilitiesKHR,
         preferred_dimensions: &[u32; 2],
-        ) -> Extent2D {
-
+    ) -> Extent2D {
         // Pick the animation studio.
         if capabilities.current_extent.width != u32::MAX {
             return capabilities.current_extent;
@@ -136,4 +135,3 @@ impl SwapchainSupportDetails {
         }
     }
 }
-
