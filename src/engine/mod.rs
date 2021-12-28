@@ -1,6 +1,12 @@
 use crate::engine::shader_utils::read_shader_from_file;
 
-use ash::vk::{AttachmentDescription, AttachmentLoadOp, AttachmentStoreOp, BlendFactor, BlendOp, ColorComponentFlags, FrontFace, ImageLayout, LogicOp, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo, RenderPass, SampleCountFlags};
+use ash::vk::{
+    AttachmentDescription, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp, BlendFactor,
+    BlendOp, ColorComponentFlags, FrontFace, ImageLayout, LogicOp, PipelineBindPoint,
+    PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineLayout,
+    PipelineLayoutCreateInfo, RenderPass, RenderPassCreateInfo, SampleCountFlags,
+    SubpassDescription,
+};
 use ash::{
     extensions::{
         ext::DebugUtils,
@@ -49,7 +55,8 @@ pub struct Engine {
     swapchain_khr: SwapchainKHR,
     swapchain_image_views: Vec<ImageView>,
     swapchain_properties: SwapchainProperties,
-    pipeline_layout: PipelineLayout
+    pipeline_layout: PipelineLayout,
+    render_pass: RenderPass
 }
 
 impl Engine {
@@ -90,6 +97,8 @@ impl Engine {
 
         let pipeline = Self::create_pipeline(vk_context.device(), properties);
 
+        let render_pass = Self::create_render_pass(vk_context.device(), properties);
+
         Ok(Engine {
             _physical_device: physical_device,
             _graphics_queue: graphics_queue,
@@ -101,7 +110,8 @@ impl Engine {
             swapchain_khr,
             swapchain_image_views,
             swapchain_properties: properties,
-            pipeline_layout: pipeline
+            pipeline_layout: pipeline,
+            render_pass
         })
     }
 
@@ -531,8 +541,12 @@ impl Engine {
         pipeline_layout
     }
 
+    /// Create the renderpass + multiple subpasses. Subpasses are rendering ops that rely on the
+    /// previous framebuffer. Post processing fx are common subpasses.
     fn create_render_pass(
-        device: &Device, swapchain_properties: SwapchainProperties) -> RenderPass {
+        device: &Device,
+        swapchain_properties: SwapchainProperties,
+    ) -> RenderPass {
         let attachment_desc = AttachmentDescription::builder()
             .format(swapchain_properties.format.format)
             .samples(SampleCountFlags::TYPE_1)
@@ -543,7 +557,26 @@ impl Engine {
             .build();
         let attachment_descs = [attachment_desc];
 
-        todo!("Implement the attachment refs and subpasses");
+        // The first attachment is pretty much a color buffer
+        let attachment_ref = AttachmentReference::builder()
+            .attachment(0)
+            .layout(ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+            .build();
+        let attachment_refs = [attachment_ref];
+
+        // Every subpass references 1 or more attachment descriptions.
+        let subpass_desc = SubpassDescription::builder()
+            .pipeline_bind_point(PipelineBindPoint::GRAPHICS)
+            .color_attachments(&attachment_refs)
+            .build();
+        let subpass_descs = [subpass_desc];
+
+        let render_pass_info = RenderPassCreateInfo::builder()
+            .attachments(&attachment_descs)
+            .subpasses(&subpass_descs)
+            .build();
+
+        unsafe { device.create_render_pass(&render_pass_info, None).unwrap() }
     }
 }
 
@@ -554,6 +587,7 @@ impl Drop for Engine {
         let device = self.vk_context.device();
         unsafe {
             device.destroy_pipeline_layout(self.pipeline_layout, None);
+            device.destroy_render_pass(self.render_pass, None);
             self.swapchain_image_views
                 .iter()
                 .for_each(|v| device.destroy_image_view(*v, None));
