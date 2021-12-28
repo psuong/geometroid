@@ -2,10 +2,11 @@ use crate::engine::shader_utils::read_shader_from_file;
 
 use ash::vk::{
     AttachmentDescription, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp, BlendFactor,
-    BlendOp, ColorComponentFlags, FrontFace, ImageLayout, LogicOp, PipelineBindPoint,
-    PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineLayout,
-    PipelineLayoutCreateInfo, RenderPass, RenderPassCreateInfo, SampleCountFlags,
-    SubpassDescription,
+    BlendOp, ColorComponentFlags, FrontFace, GraphicsPipelineCreateInfo, ImageLayout, LogicOp,
+    Pipeline, PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState,
+    PipelineColorBlendStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo,
+    PipelineShaderStageCreateInfo, RenderPass, RenderPassCreateInfo, SampleCountFlags,
+    ShaderStageFlags, SubpassDescription,
 };
 use ash::{
     extensions::{
@@ -55,8 +56,9 @@ pub struct Engine {
     swapchain_khr: SwapchainKHR,
     swapchain_image_views: Vec<ImageView>,
     swapchain_properties: SwapchainProperties,
+    pipeline: Pipeline,
     pipeline_layout: PipelineLayout,
-    render_pass: RenderPass
+    render_pass: RenderPass,
 }
 
 impl Engine {
@@ -95,9 +97,9 @@ impl Engine {
         let swapchain_image_views =
             Self::create_swapchain_image_views(vk_context.device(), &images, properties);
 
-        let pipeline = Self::create_pipeline(vk_context.device(), properties);
-
         let render_pass = Self::create_render_pass(vk_context.device(), properties);
+        let (pipeline, layout) =
+            Self::create_pipeline(vk_context.device(), properties, render_pass);
 
         Ok(Engine {
             _physical_device: physical_device,
@@ -110,8 +112,9 @@ impl Engine {
             swapchain_khr,
             swapchain_image_views,
             swapchain_properties: properties,
-            pipeline_layout: pipeline,
-            render_pass
+            pipeline_layout: layout,
+            pipeline,
+            render_pass,
         })
     }
 
@@ -422,7 +425,8 @@ impl Engine {
     fn create_pipeline(
         device: &Device,
         swapchain_properties: SwapchainProperties,
-    ) -> PipelineLayout {
+        render_pass: RenderPass,
+    ) -> (Pipeline, PipelineLayout) {
         // TODO: Load through a config file to make this work?
         let vert_source = read_shader_from_file(
             "D:/Documents/Projects/Rust/geometroid/src/shaders/shader.vert.spv",
@@ -434,9 +438,24 @@ impl Engine {
         let vertex_shader_module = create_shader_module(device, &vert_source);
         let fragment_shader_module = create_shader_module(device, &frag_source);
 
+        let entry_point_name = CString::new("main").unwrap();
+        let vertex_shader_state_info = PipelineShaderStageCreateInfo::builder()
+            .stage(ShaderStageFlags::VERTEX)
+            .module(vertex_shader_module)
+            .name(&entry_point_name)
+            .build();
+
+        let fragment_shader_state_info = PipelineShaderStageCreateInfo::builder()
+            .stage(ShaderStageFlags::FRAGMENT)
+            .module(fragment_shader_module)
+            .name(&entry_point_name)
+            .build();
+
+        let shader_states_info = [vertex_shader_state_info, fragment_shader_state_info];
+
         // Describes the layout of the vertex data.
         // TODO: Uncomment when I create a mesh struct.
-        let _vertex_input_create_info = PipelineVertexInputStateCreateInfo::builder()
+        let vertex_input_info = PipelineVertexInputStateCreateInfo::builder()
             // .vertex_binding_descriptions(vertex_binding_descriptions)
             // .vertex_attribute_descriptions(vertex_attribute_descriptions)
             .build();
@@ -444,7 +463,7 @@ impl Engine {
         // Describes the kind of input geometry that will be drawn from the vertices and if primtive
         // restart is enabled.
         // Reusing vertices is a pretty standard optimization, so primtive restart
-        let _input_assembly_create_info = PipelineInputAssemblyStateCreateInfo::builder()
+        let input_assembly_info = PipelineInputAssemblyStateCreateInfo::builder()
             .topology(PrimitiveTopology::TRIANGLE_LIST)
             .primitive_restart_enable(false)
             .build();
@@ -465,7 +484,7 @@ impl Engine {
         };
         let scissors = [scissor];
 
-        let _viewport_create_info = PipelineViewportStateCreateInfo::builder()
+        let viewport_info = PipelineViewportStateCreateInfo::builder()
             .viewports(&viewports)
             .scissors(&scissors)
             .build();
@@ -475,7 +494,7 @@ impl Engine {
         // colored.
         // Can configure to output fragments that fill entire polygons or just the edges (wireframe
         // shading).
-        let _rasterizer_create_info = PipelineRasterizationStateCreateInfo::builder()
+        let rasterizer_info = PipelineRasterizationStateCreateInfo::builder()
             .depth_clamp_enable(false)
             .rasterizer_discard_enable(false)
             .polygon_mode(PolygonMode::FILL)
@@ -490,7 +509,7 @@ impl Engine {
             .build();
 
         // An easy way to do some kind of anti-aliasing.
-        let _multisampling_create_info = vk::PipelineMultisampleStateCreateInfo::builder()
+        let multisampling_info = vk::PipelineMultisampleStateCreateInfo::builder()
             .sample_shading_enable(false)
             .rasterization_samples(vk::SampleCountFlags::TYPE_1)
             .min_sample_shading(1.0)
@@ -499,7 +518,7 @@ impl Engine {
             .alpha_to_one_enable(false)
             .build();
 
-        let color_blend_attachment = PipelineColorBlendAttachmentState::builder()
+        let color_blending_attachment = PipelineColorBlendAttachmentState::builder()
             .color_write_mask(ColorComponentFlags::all())
             .blend_enable(false)
             .src_color_blend_factor(BlendFactor::ONE)
@@ -509,9 +528,9 @@ impl Engine {
             .dst_alpha_blend_factor(BlendFactor::ZERO)
             .alpha_blend_op(BlendOp::ADD)
             .build();
-        let color_blend_attachments = [color_blend_attachment];
+        let color_blend_attachments = [color_blending_attachment];
 
-        let _color_blending_info = PipelineColorBlendStateCreateInfo::builder()
+        let color_blending_info = PipelineColorBlendStateCreateInfo::builder()
             .logic_op_enable(false)
             .logic_op(LogicOp::COPY)
             .attachments(&color_blend_attachments)
@@ -519,18 +538,34 @@ impl Engine {
             .build();
 
         // TODO: Add depth & stencil testing here.
-
-        let pipeline_layout = {
-            let pipeline_layout_info = PipelineLayoutCreateInfo::builder()
+        let layout = {
+            let layout_info = PipelineLayoutCreateInfo::builder()
                 // .set_layouts(set_layouts)
                 // .push_constant_ranges(push_constant_ranges)
                 .build();
 
-            unsafe {
-                device
-                    .create_pipeline_layout(&pipeline_layout_info, None)
-                    .unwrap()
-            }
+            unsafe { device.create_pipeline_layout(&layout_info, None).unwrap() }
+        };
+
+        let pipeline_info = GraphicsPipelineCreateInfo::builder()
+            .stages(&shader_states_info)
+            .vertex_input_state(&vertex_input_info)
+            .input_assembly_state(&input_assembly_info)
+            .viewport_state(&viewport_info)
+            .rasterization_state(&rasterizer_info)
+            .multisample_state(&multisampling_info)
+            // .depth_stencil_state(depth_stencil_state)
+            .color_blend_state(&color_blending_info)
+            .layout(layout)
+            .render_pass(render_pass)
+            .subpass(0)
+            .build();
+        let pipeline_infos = [pipeline_info];
+
+        let pipeline = unsafe {
+            device
+                .create_graphics_pipelines(PipelineCache::null(), &pipeline_infos, None)
+                .unwrap()[0]
         };
 
         unsafe {
@@ -538,7 +573,7 @@ impl Engine {
             device.destroy_shader_module(fragment_shader_module, None);
         };
 
-        pipeline_layout
+        (pipeline, layout)
     }
 
     /// Create the renderpass + multiple subpasses. Subpasses are rendering ops that rely on the
@@ -586,6 +621,7 @@ impl Drop for Engine {
 
         let device = self.vk_context.device();
         unsafe {
+            device.destroy_pipeline(self.pipeline, None);
             device.destroy_pipeline_layout(self.pipeline_layout, None);
             device.destroy_render_pass(self.render_pass, None);
             self.swapchain_image_views
