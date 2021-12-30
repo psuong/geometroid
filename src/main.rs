@@ -1,6 +1,8 @@
 mod common;
 mod engine;
 
+use std::path::Path;
+
 use env_logger::{Builder, Target};
 use log::LevelFilter;
 use winit::{
@@ -29,6 +31,9 @@ fn main() {
         .with_inner_size(PhysicalSize::new(WIDTH, HEIGHT))
         .build(&event_loop)
         .unwrap();
+
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"));
+    println!("{:?}", path.as_os_str());
 
     let mut engine = Engine::new(&window).unwrap();
 
