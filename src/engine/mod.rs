@@ -2,11 +2,14 @@ use crate::engine::shader_utils::read_shader_from_file;
 
 use ash::vk::{
     AttachmentDescription, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp, BlendFactor,
-    BlendOp, ColorComponentFlags, Framebuffer, FramebufferCreateInfo, FrontFace,
-    GraphicsPipelineCreateInfo, ImageLayout, LogicOp, Pipeline, PipelineBindPoint, PipelineCache,
-    PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineLayout,
-    PipelineLayoutCreateInfo, PipelineShaderStageCreateInfo, RenderPass, RenderPassCreateInfo,
-    SampleCountFlags, ShaderStageFlags, SubpassDescription,
+    BlendOp, ClearColorValue, ClearValue, ColorComponentFlags, CommandBuffer,
+    CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel, CommandBufferUsageFlags,
+    CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo, Framebuffer, FramebufferCreateInfo,
+    FrontFace, GraphicsPipelineCreateInfo, ImageLayout, LogicOp, Pipeline, PipelineBindPoint,
+    PipelineCache, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo,
+    PipelineLayout, PipelineLayoutCreateInfo, PipelineShaderStageCreateInfo, RenderPass,
+    RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags, ShaderStageFlags, SubpassContents,
+    SubpassDescription,
 };
 use ash::{
     extensions::{
@@ -50,15 +53,17 @@ pub struct Engine {
     _graphics_queue: Queue,
     _present_queue: Queue,
     _images: Vec<Image>,
+    _swapchain_properties: SwapchainProperties,
+    _command_buffers: Vec<CommandBuffer>,
     vk_context: VkContext,
     swapchain: Swapchain,
     swapchain_khr: SwapchainKHR,
     swapchain_image_views: Vec<ImageView>,
-    swapchain_properties: SwapchainProperties,
     pipeline: Pipeline,
     pipeline_layout: PipelineLayout,
     render_pass: RenderPass,
     swapchain_framebuffers: Vec<Framebuffer>,
+    command_pool: CommandPool,
 }
 
 impl Engine {
@@ -108,20 +113,37 @@ impl Engine {
             properties,
         );
 
+        let command_pool = Self::create_command_pool(
+            vk_context.device(), 
+            vk_context.instance(), 
+            vk_context.surface(), 
+            surface_khr, 
+            physical_device);
+
+        let command_buffers = Self::create_and_register_command_buffers(
+            &vk_context.device(), 
+            command_pool, 
+            &swapchain_framebuffers, 
+            render_pass, 
+            properties, 
+            pipeline);
+
         Ok(Engine {
             _physical_device: physical_device,
             _graphics_queue: graphics_queue,
             _present_queue: present_queue,
             _images: images,
+            _swapchain_properties: properties,
+            _command_buffers: command_buffers,
             vk_context,
             swapchain,
             swapchain_khr,
             swapchain_image_views,
-            swapchain_properties: properties,
             pipeline_layout: layout,
             pipeline,
             render_pass,
             swapchain_framebuffers,
+            command_pool,
         })
     }
 
@@ -648,6 +670,108 @@ impl Engine {
             })
             .collect::<Vec<Framebuffer>>()
     }
+
+    /// We need a command pool which stores all command buffers. Manage some unmanaged memory
+    /// cause never trust the idiot behind the screen to program something :)
+    fn create_command_pool(
+        device: &Device,
+        instance: &Instance,
+        surface: &Surface,
+        surface_khr: SurfaceKHR,
+        physical_device: PhysicalDevice,
+    ) -> CommandPool {
+        let (graphics_family, _) =
+            Self::find_queue_families(instance, surface, surface_khr, physical_device);
+
+        let command_pool_info = CommandPoolCreateInfo::builder()
+            .queue_family_index(graphics_family.unwrap())
+            .flags(CommandPoolCreateFlags::empty())
+            .build();
+
+        unsafe {
+            device
+                .create_command_pool(&command_pool_info, None)
+                .unwrap()
+        }
+    }
+
+    fn create_and_register_command_buffers(
+        device: &Device,
+        pool: CommandPool,
+        framebuffers: &[Framebuffer],
+        render_pass: RenderPass,
+        swapchain_properties: SwapchainProperties,
+        graphics_pipeline: Pipeline,
+    ) -> Vec<CommandBuffer> {
+        let allocate_info = CommandBufferAllocateInfo::builder()
+            .command_pool(pool)
+            .level(CommandBufferLevel::PRIMARY)
+            .command_buffer_count(framebuffers.len() as u32)
+            .build();
+
+        let buffers = unsafe { device.allocate_command_buffers(&allocate_info).unwrap() };
+
+        buffers
+            .iter()
+            .zip(framebuffers.iter())
+            .for_each(|(buffer, framebuffer)| {
+                let buffer = *buffer;
+
+                // begin the command buffer
+                {
+                    let command_buffer_begin_info = CommandBufferBeginInfo::builder()
+                        .flags(CommandBufferUsageFlags::SIMULTANEOUS_USE)
+                        // typically there would be an inheritance info here.
+                        .build();
+                    unsafe {
+                        device
+                            .begin_command_buffer(buffer, &command_buffer_begin_info)
+                            .unwrap()
+                    };
+                }
+
+                // Begin the render_pass
+                {
+                    let clear_values = [ClearValue {
+                        color: ClearColorValue {
+                            float32: [0.0, 0.0, 0.0, 1.0],
+                        },
+                    }];
+
+                    let render_pass_begin_info = RenderPassBeginInfo::builder()
+                        .render_pass(render_pass)
+                        .framebuffer(*framebuffer)
+                        .render_area(Rect2D {
+                            offset: Offset2D { x: 0, y: 0 },
+                            extent: swapchain_properties.extent,
+                        })
+                        .clear_values(&clear_values)
+                        .build();
+
+                    unsafe {
+                        device.cmd_begin_render_pass(
+                            buffer,
+                            &render_pass_begin_info,
+                            SubpassContents::INLINE,
+                        )
+                    };
+                }
+
+                unsafe {
+                    device.cmd_bind_pipeline(buffer, PipelineBindPoint::GRAPHICS, graphics_pipeline)
+                }
+
+                // Playback the command buffer
+                unsafe { device.cmd_draw(buffer, 3, 1, 0, 0) };
+
+                // End the renderpass
+                unsafe { device.cmd_end_render_pass(buffer) };
+
+                // End the command buffer
+                unsafe { device.end_command_buffer(buffer).unwrap() };
+            });
+        buffers
+    }
 }
 
 impl Drop for Engine {
@@ -656,7 +780,9 @@ impl Drop for Engine {
 
         let device = self.vk_context.device();
         unsafe {
-            log::debug!("Cleaning up framebuffers");
+            log::debug!("Cleaning up CommandPool...");
+            device.destroy_command_pool(self.command_pool, None);
+            log::debug!("Cleaning up framebuffers...");
             // Framebuffers need to be destroyed before the pipeline.
             self.swapchain_framebuffers.iter().for_each(|framebuffer| {
                 device.destroy_framebuffer(*framebuffer, None);
