@@ -1,8 +1,6 @@
 mod common;
 mod engine;
 
-use std::path::Path;
-
 use env_logger::{Builder, Target};
 use log::LevelFilter;
 use winit::{
@@ -32,12 +30,7 @@ fn main() {
         .build(&event_loop)
         .unwrap();
 
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"));
-    println!("{:?}", path.as_os_str());
-
     let mut engine = Engine::new(&window).unwrap();
-
-    println!("{:?}", std::env::current_exe());
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;

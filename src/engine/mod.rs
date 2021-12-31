@@ -2,11 +2,11 @@ use crate::engine::shader_utils::read_shader_from_file;
 
 use ash::vk::{
     AttachmentDescription, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp, BlendFactor,
-    BlendOp, ColorComponentFlags, FrontFace, GraphicsPipelineCreateInfo, ImageLayout, LogicOp,
-    Pipeline, PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState,
-    PipelineColorBlendStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo,
-    PipelineShaderStageCreateInfo, RenderPass, RenderPassCreateInfo, SampleCountFlags,
-    ShaderStageFlags, SubpassDescription,
+    BlendOp, ColorComponentFlags, Framebuffer, FramebufferCreateInfo, FrontFace,
+    GraphicsPipelineCreateInfo, ImageLayout, LogicOp, Pipeline, PipelineBindPoint, PipelineCache,
+    PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineLayout,
+    PipelineLayoutCreateInfo, PipelineShaderStageCreateInfo, RenderPass, RenderPassCreateInfo,
+    SampleCountFlags, ShaderStageFlags, SubpassDescription,
 };
 use ash::{
     extensions::{
@@ -51,7 +51,6 @@ pub struct Engine {
     _present_queue: Queue,
     _images: Vec<Image>,
     vk_context: VkContext,
-    surface_khr: SurfaceKHR,
     swapchain: Swapchain,
     swapchain_khr: SwapchainKHR,
     swapchain_image_views: Vec<ImageView>,
@@ -59,6 +58,7 @@ pub struct Engine {
     pipeline: Pipeline,
     pipeline_layout: PipelineLayout,
     render_pass: RenderPass,
+    swapchain_framebuffers: Vec<Framebuffer>,
 }
 
 impl Engine {
@@ -101,13 +101,19 @@ impl Engine {
         let (pipeline, layout) =
             Self::create_pipeline(vk_context.device(), properties, render_pass);
 
+        let swapchain_framebuffers = Self::create_framebuffers(
+            vk_context.device(),
+            &swapchain_image_views,
+            render_pass,
+            properties,
+        );
+
         Ok(Engine {
             _physical_device: physical_device,
             _graphics_queue: graphics_queue,
             _present_queue: present_queue,
             _images: images,
             vk_context,
-            surface_khr,
             swapchain,
             swapchain_khr,
             swapchain_image_views,
@@ -115,6 +121,7 @@ impl Engine {
             pipeline_layout: layout,
             pipeline,
             render_pass,
+            swapchain_framebuffers,
         })
     }
 
@@ -613,6 +620,34 @@ impl Engine {
 
         unsafe { device.create_render_pass(&render_pass_info, None).unwrap() }
     }
+
+    /// Iterate through each image in the image view and create a framebuffer for each of them.
+    /// Framebuffers have to be bound to a renderpass. So whatever properties that are defined in
+    /// the renderpass should be the same properties defined for the frame buffer.
+    fn create_framebuffers(
+        device: &Device,
+        image_views: &[ImageView],
+        render_pass: RenderPass,
+        swapchain_properties: SwapchainProperties,
+    ) -> Vec<Framebuffer> {
+        image_views
+            .into_iter()
+            .map(|view| [*view])
+            .map(|attachment| {
+                let framebuffer_info = FramebufferCreateInfo::builder()
+                    .render_pass(render_pass)
+                    .attachments(&attachment)
+                    .width(swapchain_properties.extent.width)
+                    .height(swapchain_properties.extent.height)
+                    // since we only have 1 layer defined in the swapchain, the framebuffer
+                    // must also only define 1 layer.
+                    .layers(1)
+                    .build();
+
+                unsafe { device.create_framebuffer(&framebuffer_info, None).unwrap() }
+            })
+            .collect::<Vec<Framebuffer>>()
+    }
 }
 
 impl Drop for Engine {
@@ -621,6 +656,11 @@ impl Drop for Engine {
 
         let device = self.vk_context.device();
         unsafe {
+            log::debug!("Cleaning up framebuffers");
+            // Framebuffers need to be destroyed before the pipeline.
+            self.swapchain_framebuffers.iter().for_each(|framebuffer| {
+                device.destroy_framebuffer(*framebuffer, None);
+            });
             device.destroy_pipeline(self.pipeline, None);
             device.destroy_pipeline_layout(self.pipeline_layout, None);
             device.destroy_render_pass(self.render_pass, None);
