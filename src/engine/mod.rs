@@ -8,8 +8,8 @@ use ash::vk::{
     FrontFace, GraphicsPipelineCreateInfo, ImageLayout, LogicOp, Pipeline, PipelineBindPoint,
     PipelineCache, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo,
     PipelineLayout, PipelineLayoutCreateInfo, PipelineShaderStageCreateInfo, RenderPass,
-    RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags, ShaderStageFlags, SubpassContents,
-    SubpassDescription,
+    RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags, Semaphore, SemaphoreCreateInfo,
+    ShaderStageFlags, SubpassContents, SubpassDescription,
 };
 use ash::{
     extensions::{
@@ -64,6 +64,8 @@ pub struct Engine {
     render_pass: RenderPass,
     swapchain_framebuffers: Vec<Framebuffer>,
     command_pool: CommandPool,
+    image_available_semaphore: Semaphore,
+    render_finished_semaphore: Semaphore,
 }
 
 impl Engine {
@@ -114,19 +116,24 @@ impl Engine {
         );
 
         let command_pool = Self::create_command_pool(
-            vk_context.device(), 
-            vk_context.instance(), 
-            vk_context.surface(), 
-            surface_khr, 
-            physical_device);
+            vk_context.device(),
+            vk_context.instance(),
+            vk_context.surface(),
+            surface_khr,
+            physical_device,
+        );
 
         let command_buffers = Self::create_and_register_command_buffers(
-            &vk_context.device(), 
-            command_pool, 
-            &swapchain_framebuffers, 
-            render_pass, 
-            properties, 
-            pipeline);
+            &vk_context.device(),
+            command_pool,
+            &swapchain_framebuffers,
+            render_pass,
+            properties,
+            pipeline,
+        );
+
+        let (image_available_semaphore, render_finished_semaphore) =
+            Self::create_semaphores(vk_context.device());
 
         Ok(Engine {
             _physical_device: physical_device,
@@ -144,6 +151,8 @@ impl Engine {
             render_pass,
             swapchain_framebuffers,
             command_pool,
+            image_available_semaphore,
+            render_finished_semaphore
         })
     }
 
@@ -772,6 +781,21 @@ impl Engine {
             });
         buffers
     }
+
+    /// Create 2 semaphores for when the image has been acquired and when we finish rendering so
+    /// that presenting it can be done.
+    fn create_semaphores(device: &Device) -> (Semaphore, Semaphore) {
+        let image_available = {
+            let semaphore_info = SemaphoreCreateInfo::builder().build();
+            unsafe { device.create_semaphore(&semaphore_info, None).unwrap() }
+        };
+
+        let render_finished = {
+            let semaphore_info = vk::SemaphoreCreateInfo::builder().build();
+            unsafe { device.create_semaphore(&semaphore_info, None).unwrap() }
+        };
+        (image_available, render_finished)
+    }
 }
 
 impl Drop for Engine {
@@ -780,8 +804,13 @@ impl Drop for Engine {
 
         let device = self.vk_context.device();
         unsafe {
+            log::debug!("Cleaning up the semaphores...");
+            device.destroy_semaphore(self.image_available_semaphore, None);
+            device.destroy_semaphore(self.render_finished_semaphore, None);
+
             log::debug!("Cleaning up CommandPool...");
             device.destroy_command_pool(self.command_pool, None);
+
             log::debug!("Cleaning up framebuffers...");
             // Framebuffers need to be destroyed before the pipeline.
             self.swapchain_framebuffers.iter().for_each(|framebuffer| {
