@@ -37,14 +37,23 @@ fn main() {
 
         match event {
             Event::MainEventsCleared => {
+                engine.wait_gpu_idle();
                 engine.update();
             }
             Event::WindowEvent { event, .. } => match event {
-                WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
+                WindowEvent::CloseRequested => { 
+                    log::info!("Waiting for engine to finish rendering...");
+                    // Wait for the engine to finish up since Vulkan is async.
+                    engine.wait_gpu_idle();
+                    log::info!("Engine finished rendering the last frame...Setting controlflow to exit");
+
+                    *control_flow = ControlFlow::Exit 
+                },
                 WindowEvent::Resized { .. } => log::debug!("Resize not implemented!"),
                 _ => (),
             },
             _ => (),
         }
     });
+    
 }

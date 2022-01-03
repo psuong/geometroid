@@ -1,6 +1,6 @@
 use crate::engine::shader_utils::read_shader_from_file;
 
-use ash::vk::{AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp, BlendFactor, BlendOp, ClearColorValue, ClearValue, ColorComponentFlags, CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel, CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo, Framebuffer, FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo, ImageLayout, LogicOp, Pipeline, PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags, RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SUBPASS_EXTERNAL, SampleCountFlags, Semaphore, SemaphoreCreateInfo, ShaderStageFlags, SubpassContents, SubpassDependency, SubpassDescription};
+use ash::vk::{AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp, BlendFactor, BlendOp, ClearColorValue, ClearValue, ColorComponentFlags, CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel, CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo, Fence, Framebuffer, FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo, ImageLayout, LogicOp, Pipeline, PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags, PresentInfoKHR, RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SUBPASS_EXTERNAL, SampleCountFlags, Semaphore, SemaphoreCreateInfo, ShaderStageFlags, SubmitInfo, SubpassContents, SubpassDependency, SubpassDescription};
 use ash::{
     extensions::{
         ext::DebugUtils,
@@ -142,11 +142,71 @@ impl Engine {
             swapchain_framebuffers,
             command_pool,
             image_available_semaphore,
-            render_finished_semaphore
+            render_finished_semaphore,
         })
     }
 
     pub fn update(&mut self) {}
+
+    pub fn draw_frame(&self) {
+        log::trace!("Drawing frame.");
+        // Acquire an image as the first step when drawing the frame.
+        let image_index = unsafe {
+            self.swapchain
+                .acquire_next_image(
+                    self.swapchain_khr,
+                    u64::MAX,
+                    self.image_available_semaphore,
+                    Fence::null(),
+                )
+                .unwrap()
+                .0
+        };
+
+        let wait_semaphores = [self.image_available_semaphore];
+        let signal_semaphores = [self.render_finished_semaphore];
+
+        {
+            // Submit the command buffer
+            let wait_stages = [PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
+            let command_buffers = [self._command_buffers[image_index as usize]];
+            let submit_info = SubmitInfo::builder()
+                .wait_semaphores(&wait_semaphores)
+                .wait_dst_stage_mask(&wait_stages)
+                .command_buffers(&command_buffers)
+                .signal_semaphores(&signal_semaphores)
+                .build();
+            let submit_infos = [submit_info];
+            unsafe {
+                self.vk_context
+                    .device()
+                    .queue_submit(self._graphics_queue, &submit_infos, Fence::null())
+                    .unwrap()
+            };
+        }
+
+        let swapchains = [self.swapchain_khr];
+        let image_indices = [image_index];
+
+        {
+            let present_info = PresentInfoKHR::builder()
+                .wait_semaphores(&signal_semaphores)
+                .swapchains(&swapchains)
+                .image_indices(&image_indices)
+                .build();
+
+            unsafe {
+                self.swapchain
+                    .queue_present(self._present_queue, &present_info)
+                    .unwrap()
+            };
+        }
+    }
+
+    /// Force the engine to wait because ALL vulkan operations are async.
+    pub fn wait_gpu_idle(&self) {
+        unsafe { self.vk_context.device().device_wait_idle().unwrap() }
+    }
 
     fn create_instance(entry: &Entry) -> Result<Instance, Box<dyn Error>> {
         let app_name = CString::new("Geometroid").unwrap();
@@ -370,12 +430,12 @@ impl Engine {
         };
 
         log::debug!(
-            "Creating swapchain. \n\tFormat: {:?}\n\tColorSpace: {:?}\n\tPresent Mode: {:?}\n\tExtent: {:?}\n\tImage Count: {:?}",
-            format.format,
-            format.color_space,
-            present_mode,
-            extent,
-            image_count
+        "Creating swapchain. \n\tFormat: {:?}\n\tColorSpace: {:?}\n\tPresent Mode: {:?}\n\tExtent: {:?}\n\tImage Count: {:?}",
+        format.format,
+        format.color_space,
+        present_mode,
+        extent,
+        image_count
         );
 
         let graphics = queue_families_indices.graphics_index;
@@ -636,12 +696,12 @@ impl Engine {
 
         // Subpasses in a render pass automatically take care of image layout transitions.
         // Transitions are controlled by subpass dependencies, which describe the memory layout &
-        // execution dependencies between each subpass. 
+        // execution dependencies between each subpass.
         //
-        // There are typically 2 builtin dependencies that take care of the transiation at the 
-        // start + end of the renderpass. 
+        // There are typically 2 builtin dependencies that take care of the transiation at the
+        // start + end of the renderpass.
         //
-        // The subpass here uses the COLOR_ATTACHMENT_OUTPUT. Another way is to make the semaphore 
+        // The subpass here uses the COLOR_ATTACHMENT_OUTPUT. Another way is to make the semaphore
         // to PIPELINE_STAGE_TOP_OF_PIPE_BIT instead (TODO: Look into this and remove the subpass).
         let subpass_dep = SubpassDependency::builder()
             .src_subpass(SUBPASS_EXTERNAL)
@@ -650,7 +710,8 @@ impl Engine {
             .src_access_mask(AccessFlags::empty())
             .dst_stage_mask(PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
             .dst_access_mask(
-                AccessFlags::COLOR_ATTACHMENT_READ | AccessFlags::COLOR_ATTACHMENT_WRITE)
+                AccessFlags::COLOR_ATTACHMENT_READ | AccessFlags::COLOR_ATTACHMENT_WRITE,
+            )
             .build();
         let subpass_deps = [subpass_dep];
 
