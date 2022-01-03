@@ -1,16 +1,6 @@
 use crate::engine::shader_utils::read_shader_from_file;
 
-use ash::vk::{
-    AttachmentDescription, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp, BlendFactor,
-    BlendOp, ClearColorValue, ClearValue, ColorComponentFlags, CommandBuffer,
-    CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel, CommandBufferUsageFlags,
-    CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo, Framebuffer, FramebufferCreateInfo,
-    FrontFace, GraphicsPipelineCreateInfo, ImageLayout, LogicOp, Pipeline, PipelineBindPoint,
-    PipelineCache, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo,
-    PipelineLayout, PipelineLayoutCreateInfo, PipelineShaderStageCreateInfo, RenderPass,
-    RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags, Semaphore, SemaphoreCreateInfo,
-    ShaderStageFlags, SubpassContents, SubpassDescription,
-};
+use ash::vk::{AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp, BlendFactor, BlendOp, ClearColorValue, ClearValue, ColorComponentFlags, CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel, CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo, Framebuffer, FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo, ImageLayout, LogicOp, Pipeline, PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags, RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SUBPASS_EXTERNAL, SampleCountFlags, Semaphore, SemaphoreCreateInfo, ShaderStageFlags, SubpassContents, SubpassDependency, SubpassDescription};
 use ash::{
     extensions::{
         ext::DebugUtils,
@@ -644,9 +634,30 @@ impl Engine {
             .build();
         let subpass_descs = [subpass_desc];
 
+        // Subpasses in a render pass automatically take care of image layout transitions.
+        // Transitions are controlled by subpass dependencies, which describe the memory layout &
+        // execution dependencies between each subpass. 
+        //
+        // There are typically 2 builtin dependencies that take care of the transiation at the 
+        // start + end of the renderpass. 
+        //
+        // The subpass here uses the COLOR_ATTACHMENT_OUTPUT. Another way is to make the semaphore 
+        // to PIPELINE_STAGE_TOP_OF_PIPE_BIT instead (TODO: Look into this and remove the subpass).
+        let subpass_dep = SubpassDependency::builder()
+            .src_subpass(SUBPASS_EXTERNAL)
+            .dst_subpass(0)
+            .src_stage_mask(PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+            .src_access_mask(AccessFlags::empty())
+            .dst_stage_mask(PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+            .dst_access_mask(
+                AccessFlags::COLOR_ATTACHMENT_READ | AccessFlags::COLOR_ATTACHMENT_WRITE)
+            .build();
+        let subpass_deps = [subpass_dep];
+
         let render_pass_info = RenderPassCreateInfo::builder()
             .attachments(&attachment_descs)
             .subpasses(&subpass_descs)
+            .dependencies(&subpass_deps)
             .build();
 
         unsafe { device.create_render_pass(&render_pass_info, None).unwrap() }
