@@ -1,17 +1,18 @@
+use crate::common::MAX_FRAMES_IN_FLIGHT;
 use crate::engine::shader_utils::read_shader_from_file;
 
 use ash::vk::{
     AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp,
     BlendFactor, BlendOp, ClearColorValue, ClearValue, ColorComponentFlags, CommandBuffer,
     CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel, CommandBufferUsageFlags,
-    CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo, Fence, Framebuffer,
-    FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo, ImageLayout, LogicOp, Pipeline,
-    PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState,
-    PipelineColorBlendStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo,
-    PipelineShaderStageCreateInfo, PipelineStageFlags, PresentInfoKHR, RenderPass,
-    RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags, Semaphore, SemaphoreCreateInfo,
-    ShaderStageFlags, SubmitInfo, SubpassContents, SubpassDependency, SubpassDescription,
-    SUBPASS_EXTERNAL,
+    CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo, Fence, FenceCreateFlags,
+    FenceCreateInfo, Framebuffer, FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo,
+    ImageLayout, InstanceCreateInfo, LogicOp, Pipeline, PipelineBindPoint, PipelineCache,
+    PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineLayout,
+    PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo, PipelineShaderStageCreateInfo,
+    PipelineStageFlags, PresentInfoKHR, RenderPass, RenderPassBeginInfo, RenderPassCreateInfo,
+    SampleCountFlags, Semaphore, SemaphoreCreateInfo, ShaderStageFlags, SubmitInfo,
+    SubpassContents, SubpassDependency, SubpassDescription, SUBPASS_EXTERNAL,
 };
 use ash::{
     extensions::{
@@ -66,8 +67,10 @@ pub struct Engine {
     render_pass: RenderPass,
     swapchain_framebuffers: Vec<Framebuffer>,
     command_pool: CommandPool,
-    image_available_semaphore: Semaphore,
-    render_finished_semaphore: Semaphore,
+    image_available_semaphores: Vec<Semaphore>,
+    render_finished_semaphores: Vec<Semaphore>,
+    in_flight_fences: Vec<Fence>,
+    current_frame: usize,
 }
 
 impl Engine {
@@ -134,8 +137,8 @@ impl Engine {
             pipeline,
         );
 
-        let (image_available_semaphore, render_finished_semaphore) =
-            Self::create_semaphores(vk_context.device());
+        let (image_available_semaphores, render_finished_semaphores, in_flight_fences) =
+            Self::create_sync_objects(vk_context.device());
 
         Ok(Engine {
             _physical_device: physical_device,
@@ -153,66 +156,17 @@ impl Engine {
             render_pass,
             swapchain_framebuffers,
             command_pool,
-            image_available_semaphore,
-            render_finished_semaphore,
+            image_available_semaphores,
+            render_finished_semaphores,
+            in_flight_fences,
+            current_frame: 0,
         })
     }
 
     pub fn update(&mut self) {}
 
     pub fn draw_frame(&self) {
-        log::trace!("Drawing frame.");
-        // Acquire an image as the first step when drawing the frame.
-        let image_index = unsafe {
-            self.swapchain
-                .acquire_next_image(
-                    self.swapchain_khr,
-                    u64::MAX,
-                    self.image_available_semaphore,
-                    Fence::null(),
-                )
-                .unwrap()
-                .0
-        };
-
-        let wait_semaphores = [self.image_available_semaphore];
-        let signal_semaphores = [self.render_finished_semaphore];
-
-        {
-            // Submit the command buffer
-            let wait_stages = [PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
-            let command_buffers = [self._command_buffers[image_index as usize]];
-            let submit_info = SubmitInfo::builder()
-                .wait_semaphores(&wait_semaphores)
-                .wait_dst_stage_mask(&wait_stages)
-                .command_buffers(&command_buffers)
-                .signal_semaphores(&signal_semaphores)
-                .build();
-            let submit_infos = [submit_info];
-            unsafe {
-                self.vk_context
-                    .device()
-                    .queue_submit(self._graphics_queue, &submit_infos, Fence::null())
-                    .unwrap()
-            };
-        }
-
-        let swapchains = [self.swapchain_khr];
-        let image_indices = [image_index];
-
-        {
-            let present_info = PresentInfoKHR::builder()
-                .wait_semaphores(&signal_semaphores)
-                .swapchains(&swapchains)
-                .image_indices(&image_indices)
-                .build();
-
-            unsafe {
-                self.swapchain
-                    .queue_present(self._present_queue, &present_info)
-                    .unwrap()
-            };
-        }
+        todo!("Redo how draw_frame works.");
     }
 
     /// Force the engine to wait because ALL vulkan operations are async.
@@ -245,7 +199,7 @@ impl Engine {
         let layer_name_ptrs: Vec<*const i8> =
             layer_names.iter().map(|name| name.as_ptr()).collect();
 
-        let mut instance_create_info = vk::InstanceCreateInfo::builder()
+        let mut instance_create_info = InstanceCreateInfo::builder()
             .application_info(&app_info)
             .enabled_extension_names(&extension_names);
 
@@ -355,7 +309,7 @@ impl Engine {
     /// The logical device will interact with the physical device (our discrete video card).
     fn create_logical_device_with_graphics_queue(
         instance: &Instance,
-        device: vk::PhysicalDevice,
+        device: PhysicalDevice,
         queue_families_indices: QueueFamiliesIndices,
     ) -> (Device, Queue, Queue) {
         let graphics_family_index = queue_families_indices.graphics_index;
@@ -491,7 +445,7 @@ impl Engine {
     /// don't need to be mipmapped since it's just a single view of the entire screen.
     fn create_swapchain_image_views(
         device: &Device,
-        swapchain_images: &[vk::Image],
+        swapchain_images: &[Image],
         swapchain_properties: SwapchainProperties,
     ) -> Vec<ImageView> {
         swapchain_images
@@ -609,9 +563,9 @@ impl Engine {
             .build();
 
         // An easy way to do some kind of anti-aliasing.
-        let multisampling_info = vk::PipelineMultisampleStateCreateInfo::builder()
+        let multisampling_info = PipelineMultisampleStateCreateInfo::builder()
             .sample_shading_enable(false)
-            .rasterization_samples(vk::SampleCountFlags::TYPE_1)
+            .rasterization_samples(SampleCountFlags::TYPE_1)
             .min_sample_shading(1.0)
             // .sample_mask() // null
             .alpha_to_coverage_enable(false)
@@ -866,19 +820,38 @@ impl Engine {
         buffers
     }
 
-    /// Create 2 semaphores for when the image has been acquired and when we finish rendering so
-    /// that presenting it can be done.
-    fn create_semaphores(device: &Device) -> (Semaphore, Semaphore) {
-        let image_available = {
-            let semaphore_info = SemaphoreCreateInfo::builder().build();
-            unsafe { device.create_semaphore(&semaphore_info, None).unwrap() }
-        };
+    fn create_sync_objects(device: &Device) -> (Vec<Semaphore>, Vec<Semaphore>, Vec<Fence>) {
+        let mut image_available_semaphores = Vec::new();
+        let mut render_finished_semaphores = Vec::new();
+        let mut in_flight_fences = Vec::new();
 
-        let render_finished = {
-            let semaphore_info = vk::SemaphoreCreateInfo::builder().build();
-            unsafe { device.create_semaphore(&semaphore_info, None).unwrap() }
-        };
-        (image_available, render_finished)
+        for _ in 0..MAX_FRAMES_IN_FLIGHT {
+            let image_available = {
+                let semaphore_info = SemaphoreCreateInfo::builder().build();
+                unsafe { device.create_semaphore(&semaphore_info, None).unwrap() }
+            };
+            image_available_semaphores.push(image_available);
+
+            let render_finished = {
+                let semaphore_info = SemaphoreCreateInfo::builder().build();
+                unsafe { device.create_semaphore(&semaphore_info, None).unwrap() }
+            };
+            render_finished_semaphores.push(render_finished);
+
+            let in_flight = {
+                let fence_info = FenceCreateInfo::builder()
+                    .flags(FenceCreateFlags::SIGNALED)
+                    .build();
+                unsafe { device.create_fence(&fence_info, None).unwrap() }
+            };
+            in_flight_fences.push(in_flight);
+        }
+
+        (
+            image_available_semaphores,
+            render_finished_semaphores,
+            in_flight_fences,
+        )
     }
 }
 
@@ -889,8 +862,9 @@ impl Drop for Engine {
         let device = self.vk_context.device();
         unsafe {
             log::debug!("Cleaning up the semaphores...");
-            device.destroy_semaphore(self.image_available_semaphore, None);
-            device.destroy_semaphore(self.render_finished_semaphore, None);
+            todo!("Clean out the semaphores as we have multiple semaphores per frame!");
+            // device.destroy_semaphore(self.image_available_semaphore, None);
+            // device.destroy_semaphore(self.render_finished_semaphore, None);
 
             log::debug!("Cleaning up CommandPool...");
             device.destroy_command_pool(self.command_pool, None);
