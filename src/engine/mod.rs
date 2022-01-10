@@ -165,6 +165,7 @@ impl Engine {
 
     pub fn update(&mut self) {
         self.draw_frame();
+        self.wait_gpu_idle();
     }
 
     fn draw_frame(&mut self) {

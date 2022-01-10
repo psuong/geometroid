@@ -37,7 +37,6 @@ fn main() {
 
         match event {
             Event::MainEventsCleared => {
-                engine.wait_gpu_idle();
                 engine.update();
             }
             Event::WindowEvent { event, .. } => match event {
