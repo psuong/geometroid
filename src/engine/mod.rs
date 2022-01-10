@@ -123,7 +123,7 @@ impl Engine {
         let command_pool = Self::create_command_pool(
             vk_context.device_ref(),
             vk_context.instance_ref(),
-            vk_context.surface_ref_ref(),
+            vk_context.surface_ref(),
             surface_khr,
             physical_device,
         );
@@ -440,8 +440,8 @@ impl Engine {
     ) -> (Swapchain, SwapchainKHR, SwapchainProperties, Vec<Image>) {
         let details = SwapchainSupportDetails::query(
             vk_context.physical_device_ref(),
-            vk_context.surface_ref_ref(),
-            vk_context.surface_khr_ref(),
+            vk_context.surface_ref(),
+            vk_context.surface_khr(),
         );
 
         let properties = details.get_ideal_swapchain_properties(dimensions);
@@ -477,7 +477,7 @@ impl Engine {
 
         let create_info = {
             let mut builder = SwapchainCreateInfoKHR::builder()
-                .surface(vk_context.surface_khr_ref())
+                .surface(vk_context.surface_khr())
                 .min_image_count(image_count)
                 .image_format(format.format)
                 .image_color_space(format.color_space)
