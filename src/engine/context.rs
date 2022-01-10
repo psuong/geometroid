@@ -89,11 +89,11 @@ impl VkContext {
         }
     }
 
-    pub fn instance(&self) -> &Instance {
+    pub fn instance_ref(&self) -> &Instance {
         &self.instance
     }
 
-    pub fn surface(&self) -> &Surface {
+    pub fn surface_ref(&self) -> &Surface {
         &self.surface
     }
 
@@ -101,11 +101,11 @@ impl VkContext {
         self.surface_khr
     }
 
-    pub fn physical_device(&self) -> PhysicalDevice {
+    pub fn physical_device_ref(&self) -> PhysicalDevice {
         self.physical_device
     }
 
-    pub fn device(&self) -> &Device {
+    pub fn device_ref(&self) -> &Device {
         &self.device
     }
 }

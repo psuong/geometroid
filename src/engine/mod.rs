@@ -52,12 +52,12 @@ use self::{shader_utils::create_shader_module, utils::SwapchainProperties};
 use crate::{common::HEIGHT, engine::utils::SwapchainSupportDetails, WIDTH};
 
 pub struct Engine {
-    _physical_device: PhysicalDevice,
-    _graphics_queue: Queue,
-    _present_queue: Queue,
+    physical_device: PhysicalDevice,
+    graphics_queue: Queue,
+    present_queue: Queue,
     _images: Vec<Image>,
     _swapchain_properties: SwapchainProperties,
-    _command_buffers: Vec<CommandBuffer>,
+    command_buffers: Vec<CommandBuffer>,
     vk_context: VkContext,
     swapchain: Swapchain,
     swapchain_khr: SwapchainKHR,
@@ -107,29 +107,29 @@ impl Engine {
             Self::create_swapchain_and_images(&vk_context, queue_families_indices, dimensions);
 
         let swapchain_image_views =
-            Self::create_swapchain_image_views(vk_context.device(), &images, properties);
+            Self::create_swapchain_image_views(vk_context.device_ref(), &images, properties);
 
-        let render_pass = Self::create_render_pass(vk_context.device(), properties);
+        let render_pass = Self::create_render_pass(vk_context.device_ref(), properties);
         let (pipeline, layout) =
-            Self::create_pipeline(vk_context.device(), properties, render_pass);
+            Self::create_pipeline(vk_context.device_ref(), properties, render_pass);
 
         let swapchain_framebuffers = Self::create_framebuffers(
-            vk_context.device(),
+            vk_context.device_ref(),
             &swapchain_image_views,
             render_pass,
             properties,
         );
 
         let command_pool = Self::create_command_pool(
-            vk_context.device(),
-            vk_context.instance(),
-            vk_context.surface(),
+            vk_context.device_ref(),
+            vk_context.instance_ref(),
+            vk_context.surface_ref_ref(),
             surface_khr,
             physical_device,
         );
 
         let command_buffers = Self::create_and_register_command_buffers(
-            &vk_context.device(),
+            &vk_context.device_ref(),
             command_pool,
             &swapchain_framebuffers,
             render_pass,
@@ -138,15 +138,14 @@ impl Engine {
         );
 
         let (image_available_semaphores, render_finished_semaphores, in_flight_fences) =
-            Self::create_sync_objects(vk_context.device());
+            Self::create_sync_objects(vk_context.device_ref());
 
         Ok(Engine {
-            _physical_device: physical_device,
-            _graphics_queue: graphics_queue,
-            _present_queue: present_queue,
+            physical_device,
+            graphics_queue,
+            present_queue,
             _images: images,
             _swapchain_properties: properties,
-            _command_buffers: command_buffers,
             vk_context,
             swapchain,
             swapchain_khr,
@@ -156,6 +155,7 @@ impl Engine {
             render_pass,
             swapchain_framebuffers,
             command_pool,
+            command_buffers,
             image_available_semaphores,
             render_finished_semaphores,
             in_flight_fences,
@@ -163,15 +163,82 @@ impl Engine {
         })
     }
 
-    pub fn update(&mut self) {}
+    pub fn update(&mut self) {
+        self.draw_frame();
+    }
 
-    pub fn draw_frame(&self) {
-        todo!("Redo how draw_frame works.");
+    fn draw_frame(&mut self) {
+        log::trace!("Drawing frames");
+        let image_available_semaphore = self.image_available_semaphores[self.current_frame];
+        let render_finished_semaphore = self.render_finished_semaphores[self.current_frame];
+        let in_flight_fence = self.in_flight_fences[self.current_frame];
+        let wait_fences = [in_flight_fence];
+
+        unsafe {
+            let device = self.vk_context.device_ref();
+            device
+                .wait_for_fences(&wait_fences, true, std::u64::MAX)
+                .unwrap();
+            device.reset_fences(&wait_fences).unwrap()
+        };
+
+        let image_index = unsafe {
+            self.swapchain
+                .acquire_next_image(
+                    self.swapchain_khr, 
+                    u64::MAX, 
+                    image_available_semaphore,
+                    Fence::null())
+                .unwrap()
+                .0
+        };
+
+        let wait_semaphores = [image_available_semaphore];
+        let signal_semaphores = [render_finished_semaphore];
+
+        {
+            let wait_stages = [PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
+            let command_buffers = [self.command_buffers[image_index as usize]];
+
+            let submit_info = SubmitInfo::builder()
+                .wait_semaphores(&wait_semaphores)
+                .wait_dst_stage_mask(&wait_stages)
+                .command_buffers(&command_buffers)
+                .signal_semaphores(&signal_semaphores)
+                .build();
+            let submit_infos = [submit_info];
+            unsafe {
+                let device = self.vk_context.device_ref();
+                device
+                    .queue_submit(self.graphics_queue, &submit_infos, in_flight_fence)
+                    .unwrap()
+            };
+        }
+
+        let swapchains = [self.swapchain_khr];
+        let images_indices = [image_index];
+
+        {
+            let present_info = PresentInfoKHR::builder()
+                .wait_semaphores(&signal_semaphores)
+                .swapchains(&swapchains)
+                .image_indices(&images_indices)
+                //.results()
+                .build();
+
+            unsafe {
+                self.swapchain
+                    .queue_present(self.present_queue, &present_info)
+                    .unwrap()
+            };
+        }
+
+        self.current_frame += (1 + self.current_frame) % MAX_FRAMES_IN_FLIGHT as usize;
     }
 
     /// Force the engine to wait because ALL vulkan operations are async.
     pub fn wait_gpu_idle(&self) {
-        unsafe { self.vk_context.device().device_wait_idle().unwrap() }
+        unsafe { self.vk_context.device_ref().device_wait_idle().unwrap() }
     }
 
     fn create_instance(entry: &Entry) -> Result<Instance, Box<dyn Error>> {
@@ -372,9 +439,9 @@ impl Engine {
         dimensions: [u32; 2],
     ) -> (Swapchain, SwapchainKHR, SwapchainProperties, Vec<Image>) {
         let details = SwapchainSupportDetails::query(
-            vk_context.physical_device(),
-            vk_context.surface(),
-            vk_context.surface_khr(),
+            vk_context.physical_device_ref(),
+            vk_context.surface_ref_ref(),
+            vk_context.surface_khr_ref(),
         );
 
         let properties = details.get_ideal_swapchain_properties(dimensions);
@@ -410,7 +477,7 @@ impl Engine {
 
         let create_info = {
             let mut builder = SwapchainCreateInfoKHR::builder()
-                .surface(vk_context.surface_khr())
+                .surface(vk_context.surface_khr_ref())
                 .min_image_count(image_count)
                 .image_format(format.format)
                 .image_color_space(format.color_space)
@@ -434,7 +501,7 @@ impl Engine {
                 .build()
         };
 
-        let swapchain = Swapchain::new(vk_context.instance(), vk_context.device());
+        let swapchain = Swapchain::new(vk_context.instance_ref(), vk_context.device_ref());
         let swapchain_khr = unsafe { swapchain.create_swapchain(&create_info, None).unwrap() };
         let images = unsafe { swapchain.get_swapchain_images(swapchain_khr).unwrap() };
         (swapchain, swapchain_khr, properties, images)
@@ -859,12 +926,20 @@ impl Drop for Engine {
     fn drop(&mut self) {
         log::info!("Releasing engine.");
 
-        let device = self.vk_context.device();
+        let device = self.vk_context.device_ref();
         unsafe {
             log::debug!("Cleaning up the semaphores...");
-            todo!("Clean out the semaphores as we have multiple semaphores per frame!");
-            // device.destroy_semaphore(self.image_available_semaphore, None);
-            // device.destroy_semaphore(self.render_finished_semaphore, None);
+            self.in_flight_fences
+                .iter()
+                .for_each(|f| device.destroy_fence(*f, None));
+
+            self.render_finished_semaphores
+                .iter()
+                .for_each(|s| device.destroy_semaphore(*s, None));
+
+            self.image_available_semaphores
+                .iter()
+                .for_each(|s| device.destroy_semaphore(*s, None));
 
             log::debug!("Cleaning up CommandPool...");
             device.destroy_command_pool(self.command_pool, None);
