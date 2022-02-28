@@ -2,8 +2,8 @@ use ash::{
     extensions::khr::{Surface, Win32Surface},
     vk::{
         ColorSpaceKHR, Extent2D, Format, PhysicalDevice, PresentModeKHR, SurfaceCapabilitiesKHR,
-        SurfaceFormatKHR, SurfaceKHR,
-    },
+        SurfaceFormatKHR, SurfaceKHR, self, 
+    }, Device,
 };
 
 /// Get required extensions on Windows.
@@ -15,6 +15,41 @@ pub fn required_extension_names() -> Vec<*const i8> {
 pub struct QueueFamiliesIndices {
     pub graphics_index: u32,
     pub present_index: u32,
+}
+
+#[derive(Clone, Copy)]
+pub struct SyncObjects {
+    image_available_semaphore: vk::Semaphore,
+    render_finished_semaphore: vk::Semaphore,
+    fence: vk::Fence
+}
+
+impl SyncObjects {
+    fn destroy(&self, device: &Device) {
+        unsafe {
+            device.destroy_semaphore(self.image_available_semaphore, None);
+            device.destroy_semaphore(self.render_finished_semaphore, None);
+            device.destroy_fence(self.fence, None);
+        }
+    }
+}
+
+pub struct InFlightFrames {
+    sync_objects: Vec<SyncObjects>,
+    current_frame: usize
+}
+
+impl InFlightFrames {
+    fn new(sync_objects: Vec<SyncObjects>) -> Self {
+        Self {
+            sync_objects,
+            current_frame: 0
+        }
+    }
+
+    fn destroy(&self, device: &Device) {
+        self.sync_objects.iter().for_each(|sync| sync.destroy(&device));
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
