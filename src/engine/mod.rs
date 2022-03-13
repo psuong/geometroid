@@ -48,6 +48,7 @@ use debug::{
 };
 use utils::QueueFamiliesIndices;
 
+use self::utils::{InFlightFrames, SyncObjects};
 use self::{shader_utils::create_shader_module, utils::SwapchainProperties};
 use crate::{common::HEIGHT, engine::utils::SwapchainSupportDetails, WIDTH};
 
@@ -67,10 +68,11 @@ pub struct Engine {
     render_pass: RenderPass,
     swapchain_framebuffers: Vec<Framebuffer>,
     command_pool: CommandPool,
-    image_available_semaphores: Vec<Semaphore>,
-    render_finished_semaphores: Vec<Semaphore>,
-    in_flight_fences: Vec<Fence>,
-    current_frame: usize,
+    in_flight_frames: InFlightFrames
+    // image_available_semaphores: Vec<Semaphore>,
+    // render_finished_semaphores: Vec<Semaphore>,
+    // in_flight_fences: Vec<Fence>,
+    // current_frame: usize,
 }
 
 impl Engine {
@@ -137,8 +139,10 @@ impl Engine {
             pipeline,
         );
 
-        let (image_available_semaphores, render_finished_semaphores, in_flight_fences) =
-            Self::create_sync_objects(vk_context.device_ref());
+        let in_flight_frames = Self::create_sync_objects(vk_context.device_ref());
+
+        // let (image_available_semaphores, render_finished_semaphores, in_flight_fences) =
+        //     Self::create_sync_objects(vk_context.device_ref());
 
         Ok(Engine {
             physical_device,
@@ -156,10 +160,11 @@ impl Engine {
             swapchain_framebuffers,
             command_pool,
             command_buffers,
-            image_available_semaphores,
-            render_finished_semaphores,
-            in_flight_fences,
-            current_frame: 0,
+            in_flight_frames
+            // image_available_semaphores,
+            // render_finished_semaphores,
+            // in_flight_fences,
+            // current_frame: 0,
         })
     }
 
@@ -888,38 +893,35 @@ impl Engine {
         buffers
     }
 
-    fn create_sync_objects(device: &Device) -> (Vec<Semaphore>, Vec<Semaphore>, Vec<Fence>) {
-        let mut image_available_semaphores = Vec::new();
-        let mut render_finished_semaphores = Vec::new();
-        let mut in_flight_fences = Vec::new();
+    fn create_sync_objects(device: &Device) -> InFlightFrames {
+        let mut sync_objects_vec : Vec<SyncObjects> = Vec::new();
 
         for _ in 0..MAX_FRAMES_IN_FLIGHT {
-            let image_available = {
+            let image_available_semaphore = { 
                 let semaphore_info = SemaphoreCreateInfo::builder().build();
                 unsafe { device.create_semaphore(&semaphore_info, None).unwrap() }
             };
-            image_available_semaphores.push(image_available);
 
-            let render_finished = {
+            let render_finished_semaphore = {
                 let semaphore_info = SemaphoreCreateInfo::builder().build();
                 unsafe { device.create_semaphore(&semaphore_info, None).unwrap() }
             };
-            render_finished_semaphores.push(render_finished);
 
-            let in_flight = {
+            let in_flight_fence = {
                 let fence_info = FenceCreateInfo::builder()
                     .flags(FenceCreateFlags::SIGNALED)
                     .build();
                 unsafe { device.create_fence(&fence_info, None).unwrap() }
             };
-            in_flight_fences.push(in_flight);
-        }
 
-        (
-            image_available_semaphores,
-            render_finished_semaphores,
-            in_flight_fences,
-        )
+            let sync_objects = SyncObjects {
+                image_available_semaphore,
+                render_finished_semaphore,
+                fence: in_flight_fence
+            };
+            sync_objects_vec.push(sync_objects);
+        }
+        InFlightFrames::new(sync_objects_vec)
     }
 }
 

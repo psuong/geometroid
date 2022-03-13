@@ -40,7 +40,7 @@ pub struct InFlightFrames {
 }
 
 impl InFlightFrames {
-    fn new(sync_objects: Vec<SyncObjects>) -> Self {
+    pub fn new(sync_objects: Vec<SyncObjects>) -> Self {
         Self {
             sync_objects,
             current_frame: 0
