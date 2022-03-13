@@ -68,11 +68,11 @@ pub struct Engine {
     render_pass: RenderPass,
     swapchain_framebuffers: Vec<Framebuffer>,
     command_pool: CommandPool,
-    in_flight_frames: InFlightFrames
+    in_flight_frames: InFlightFrames, 
     // image_available_semaphores: Vec<Semaphore>,
     // render_finished_semaphores: Vec<Semaphore>,
     // in_flight_fences: Vec<Fence>,
-    // current_frame: usize,
+    // current_frame: usize
 }
 
 impl Engine {
@@ -175,9 +175,11 @@ impl Engine {
 
     fn draw_frame(&mut self) {
         log::trace!("Drawing frames");
-        let image_available_semaphore = self.image_available_semaphores[self.current_frame];
-        let render_finished_semaphore = self.render_finished_semaphores[self.current_frame];
-        let in_flight_fence = self.in_flight_fences[self.current_frame];
+
+        let sync_objects = self.in_flight_frames.next().unwrap();
+        let image_available_semaphore = sync_objects.image_available_semaphore;
+        let render_finished_semaphore = sync_objects.render_finished_semaphore;
+        let in_flight_fence = sync_objects.fence;
         let wait_fences = [in_flight_fence];
 
         unsafe {
@@ -191,10 +193,11 @@ impl Engine {
         let image_index = unsafe {
             self.swapchain
                 .acquire_next_image(
-                    self.swapchain_khr, 
-                    u64::MAX, 
+                    self.swapchain_khr,
+                    u64::MAX,
                     image_available_semaphore,
-                    Fence::null())
+                    Fence::null(),
+                )
                 .unwrap()
                 .0
         };
@@ -238,8 +241,6 @@ impl Engine {
                     .unwrap()
             };
         }
-
-        self.current_frame += (1 + self.current_frame) % MAX_FRAMES_IN_FLIGHT as usize;
     }
 
     /// Force the engine to wait because ALL vulkan operations are async.
@@ -894,10 +895,10 @@ impl Engine {
     }
 
     fn create_sync_objects(device: &Device) -> InFlightFrames {
-        let mut sync_objects_vec : Vec<SyncObjects> = Vec::new();
+        let mut sync_objects_vec: Vec<SyncObjects> = Vec::new();
 
         for _ in 0..MAX_FRAMES_IN_FLIGHT {
-            let image_available_semaphore = { 
+            let image_available_semaphore = {
                 let semaphore_info = SemaphoreCreateInfo::builder().build();
                 unsafe { device.create_semaphore(&semaphore_info, None).unwrap() }
             };
@@ -917,7 +918,7 @@ impl Engine {
             let sync_objects = SyncObjects {
                 image_available_semaphore,
                 render_finished_semaphore,
-                fence: in_flight_fence
+                fence: in_flight_fence,
             };
             sync_objects_vec.push(sync_objects);
         }
@@ -929,20 +930,21 @@ impl Drop for Engine {
     fn drop(&mut self) {
         log::info!("Releasing engine.");
 
+        self.in_flight_frames.destroy(self.vk_context.device_ref());
         let device = self.vk_context.device_ref();
         unsafe {
             log::debug!("Cleaning up the semaphores...");
-            self.in_flight_fences
-                .iter()
-                .for_each(|f| device.destroy_fence(*f, None));
+            // self.in_flight_fences
+            //     .iter()
+            //     .for_each(|f| device.destroy_fence(*f, None));
 
-            self.render_finished_semaphores
-                .iter()
-                .for_each(|s| device.destroy_semaphore(*s, None));
+            // self.render_finished_semaphores
+            //     .iter()
+            //     .for_each(|s| device.destroy_semaphore(*s, None));
 
-            self.image_available_semaphores
-                .iter()
-                .for_each(|s| device.destroy_semaphore(*s, None));
+            // self.image_available_semaphores
+            //     .iter()
+            //     .for_each(|s| device.destroy_semaphore(*s, None));
 
             log::debug!("Cleaning up CommandPool...");
             device.destroy_command_pool(self.command_pool, None);

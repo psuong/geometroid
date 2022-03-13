@@ -19,9 +19,9 @@ pub struct QueueFamiliesIndices {
 
 #[derive(Clone, Copy)]
 pub struct SyncObjects {
-    image_available_semaphore: vk::Semaphore,
-    render_finished_semaphore: vk::Semaphore,
-    fence: vk::Fence
+    pub image_available_semaphore: vk::Semaphore,
+    pub render_finished_semaphore: vk::Semaphore,
+    pub fence: vk::Fence
 }
 
 impl SyncObjects {
@@ -47,8 +47,17 @@ impl InFlightFrames {
         }
     }
 
-    fn destroy(&self, device: &Device) {
+    pub fn destroy(&self, device: &Device) {
         self.sync_objects.iter().for_each(|sync| sync.destroy(&device));
+    }
+}
+
+impl Iterator for InFlightFrames {
+    type Item = SyncObjects;
+    fn next(&mut self) -> Option<Self::Item> {
+        let next = self.sync_objects[self.current_frame];
+        self.current_frame = (self.current_frame + 1) % self.sync_objects.len();
+        Some(next)
     }
 }
 
