@@ -54,6 +54,7 @@ use crate::{common::HEIGHT, engine::utils::SwapchainSupportDetails, WIDTH};
 
 pub struct Engine {
     physical_device: PhysicalDevice,
+    queue_families_indices: QueueFamiliesIndices,
     graphics_queue: Queue,
     present_queue: Queue,
     _images: Vec<Image>,
@@ -69,10 +70,6 @@ pub struct Engine {
     swapchain_framebuffers: Vec<Framebuffer>,
     command_pool: CommandPool,
     in_flight_frames: InFlightFrames, 
-    // image_available_semaphores: Vec<Semaphore>,
-    // render_finished_semaphores: Vec<Semaphore>,
-    // in_flight_fences: Vec<Fence>,
-    // current_frame: usize
 }
 
 impl Engine {
@@ -141,11 +138,9 @@ impl Engine {
 
         let in_flight_frames = Self::create_sync_objects(vk_context.device_ref());
 
-        // let (image_available_semaphores, render_finished_semaphores, in_flight_fences) =
-        //     Self::create_sync_objects(vk_context.device_ref());
-
         Ok(Engine {
             physical_device,
+            queue_families_indices,
             graphics_queue,
             present_queue,
             _images: images,
@@ -161,10 +156,6 @@ impl Engine {
             command_pool,
             command_buffers,
             in_flight_frames
-            // image_available_semaphores,
-            // render_finished_semaphores,
-            // in_flight_fences,
-            // current_frame: 0,
         })
     }
 
@@ -241,6 +232,49 @@ impl Engine {
                     .unwrap()
             };
         }
+    }
+
+    fn cleanup_swapchain(&mut self) {
+        unsafe {
+            self.swapchain_framebuffers
+                .iter()
+                .for_each(|f| self.vk_context.device_ref().destroy_framebuffer(*f, None));
+
+            self.vk_context.device_ref()
+                .free_command_buffers(self.command_pool, &self.command_buffers);
+            self.vk_context.device_ref()
+                .destroy_pipeline_layout(self.pipeline_layout, None);
+            self.vk_context.device_ref()
+                .destroy_render_pass(self.render_pass, None);
+            self.swapchain_image_views
+                .iter()
+                .for_each(|v| self.vk_context.device_ref().destroy_image_view(*v, None));
+            self.swapchain.destroy_swapchain(self.swapchain_khr, None);
+        }
+    }
+
+    fn recreate_swapchain(&mut self) {
+        log::debug!("Recreating swapchain");
+
+        // We must wait for the device to be idling before we recreate the swapchain
+        unsafe { self.vk_context.device_ref().device_wait_idle().unwrap() };
+
+        self.cleanup_swapchain();
+
+        // TODO: Determine the new dimensions from winit.
+        let dimensions = [800, 600];
+
+        let (swapchain, swapchain_khr, properties, images) = Self::create_swapchain_and_images(
+            &self.vk_context,
+            self.queue_families_indices,
+            dimensions
+        );
+        let swapchain_image_views = Self::create_swapchain_image_views(
+            self.vk_context.device_ref(), 
+            &images, 
+            properties);
+
+        // TODO: Recreate the renderpass on a resize.
     }
 
     /// Force the engine to wait because ALL vulkan operations are async.
@@ -929,23 +963,10 @@ impl Engine {
 impl Drop for Engine {
     fn drop(&mut self) {
         log::info!("Releasing engine.");
-
         self.in_flight_frames.destroy(self.vk_context.device_ref());
         let device = self.vk_context.device_ref();
         unsafe {
             log::debug!("Cleaning up the semaphores...");
-            // self.in_flight_fences
-            //     .iter()
-            //     .for_each(|f| device.destroy_fence(*f, None));
-
-            // self.render_finished_semaphores
-            //     .iter()
-            //     .for_each(|s| device.destroy_semaphore(*s, None));
-
-            // self.image_available_semaphores
-            //     .iter()
-            //     .for_each(|s| device.destroy_semaphore(*s, None));
-
             log::debug!("Cleaning up CommandPool...");
             device.destroy_command_pool(self.command_pool, None);
 
