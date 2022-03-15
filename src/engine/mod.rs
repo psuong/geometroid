@@ -1,7 +1,6 @@
 use crate::common::MAX_FRAMES_IN_FLIGHT;
 use crate::engine::shader_utils::read_shader_from_file;
 
-use ash::prelude::VkResult;
 use ash::vk::{
     AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp,
     BlendFactor, BlendOp, ClearColorValue, ClearValue, ColorComponentFlags, CommandBuffer,
@@ -12,8 +11,8 @@ use ash::vk::{
     PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineLayout,
     PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo, PipelineShaderStageCreateInfo,
     PipelineStageFlags, PresentInfoKHR, RenderPass, RenderPassBeginInfo, RenderPassCreateInfo,
-    SampleCountFlags, SemaphoreCreateInfo, ShaderStageFlags, SubmitInfo,
-    SubpassContents, SubpassDependency, SubpassDescription, SUBPASS_EXTERNAL,
+    SampleCountFlags, SemaphoreCreateInfo, ShaderStageFlags, SubmitInfo, SubpassContents,
+    SubpassDependency, SubpassDescription, SUBPASS_EXTERNAL,
 };
 use ash::{
     extensions::{
@@ -36,7 +35,6 @@ use std::{
     error::Error,
     ffi::{CStr, CString},
 };
-
 use winit::window::Window;
 
 mod context;
@@ -72,7 +70,7 @@ pub struct Engine {
     render_pass: RenderPass,
     swapchain_framebuffers: Vec<Framebuffer>,
     command_pool: CommandPool,
-    in_flight_frames: InFlightFrames, 
+    in_flight_frames: InFlightFrames,
 }
 
 impl Engine {
@@ -159,14 +157,14 @@ impl Engine {
             swapchain_framebuffers,
             command_pool,
             command_buffers,
-            in_flight_frames
+            in_flight_frames,
         })
     }
 
     pub fn update(&mut self) -> bool {
         let draw_frame = self.draw_frame();
         self.wait_gpu_idle();
-        return draw_frame
+        return draw_frame;
     }
 
     fn draw_frame(&mut self) -> bool {
@@ -188,10 +186,10 @@ impl Engine {
 
         let result = unsafe {
             self.swapchain.acquire_next_image(
-                self.swapchain_khr, 
+                self.swapchain_khr,
                 std::u64::MAX,
-                image_available_semaphore, 
-                Fence::null()
+                image_available_semaphore,
+                Fence::null(),
             )
         };
 
@@ -251,6 +249,9 @@ impl Engine {
         false
     }
 
+    /// Cleans up the swapchain by destroying the framebuffers, freeing the command buffers,
+    /// destroying the pipeline, pipeline layout, renderpass, swapchain image views, and
+    /// finally swapchain.
     fn cleanup_swapchain(&mut self) {
         let device = self.vk_context.device_ref();
         unsafe {
@@ -268,6 +269,15 @@ impl Engine {
         }
     }
 
+    /// When we recreate the swapchain we have to recreate the following
+    /// - Image views - b/c they are based directly on the swapchain images
+    /// - Render Pass because it depends on the format of the swpachain images
+    /// - Swapchain format - rare for it to change during resizing, but should still be necessary
+    /// - Viewport & scissor rectangle size - specified during the graphics pipeline creation
+    /// - Framebuffers - directly depend on the swapchain images
+    /// All fields have to be reassigned to the engine after creating them. Now we only need to
+    /// recreate the swapchain _when_ the swapchain is incompatible with the surface (typically on
+    /// resize) or if the window surface properties no longer match the swapchain's properties.
     pub fn recreate_swapchain(&mut self) {
         log::debug!("Recreating swapchain");
 
@@ -285,25 +295,23 @@ impl Engine {
         let (swapchain, swapchain_khr, properties, images) = Self::create_swapchain_and_images(
             &self.vk_context,
             self.queue_families_indices,
-            dimensions
+            dimensions,
         );
         let swapchain_image_views = Self::create_swapchain_image_views(device, &images, properties);
 
         let render_pass = Self::create_render_pass(device, properties);
         let (pipeline, layout) = Self::create_pipeline(device, properties, render_pass);
-        let swapchain_framebuffers = Self::create_framebuffers(
-            device, 
-            &swapchain_image_views, 
-            render_pass, 
-            properties);
+        let swapchain_framebuffers =
+            Self::create_framebuffers(device, &swapchain_image_views, render_pass, properties);
 
         let command_buffers = Self::create_and_register_command_buffers(
-            device, 
-            self.command_pool, 
-            &swapchain_framebuffers, 
-            render_pass, 
-            properties, 
-            pipeline);
+            device,
+            self.command_pool,
+            &swapchain_framebuffers,
+            render_pass,
+            properties,
+            pipeline,
+        );
 
         self.swapchain = swapchain;
         self.swapchain_khr = swapchain_khr;
@@ -911,8 +919,8 @@ impl Engine {
             .for_each(|(buffer, framebuffer)| {
                 let buffer = *buffer;
 
-                // begin the command buffer
                 {
+                    // begin the command buffer
                     let command_buffer_begin_info = CommandBufferBeginInfo::builder()
                         .flags(CommandBufferUsageFlags::SIMULTANEOUS_USE)
                         // typically there would be an inheritance info here.
@@ -924,8 +932,8 @@ impl Engine {
                     };
                 }
 
-                // Begin the render_pass
                 {
+                    // Begin the render_pass
                     let clear_values = [ClearValue {
                         color: ClearColorValue {
                             float32: [0.0, 0.0, 0.0, 1.0],
@@ -1009,19 +1017,6 @@ impl Drop for Engine {
         unsafe {
             log::debug!("Cleaning up CommandPool...");
             device.destroy_command_pool(self.command_pool, None);
-
-            log::debug!("Cleaning up framebuffers...");
-            // Framebuffers need to be destroyed before the pipeline.
-            // self.swapchain_framebuffers.iter().for_each(|framebuffer| {
-            //     device.destroy_framebuffer(*framebuffer, None);
-            // });
-            // device.destroy_pipeline(self.pipeline, None);
-            // device.destroy_pipeline_layout(self.pipeline_layout, None);
-            // device.destroy_render_pass(self.render_pass, None);
-            // self.swapchain_image_views
-            //     .iter()
-            //     .for_each(|v| device.destroy_image_view(*v, None));
-            // self.swapchain.destroy_swapchain(self.swapchain_khr, None);
         }
     }
 }
