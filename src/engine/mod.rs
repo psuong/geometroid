@@ -312,6 +312,7 @@ impl Engine {
         self.render_pass = render_pass;
         self.pipeline = pipeline;
         self.pipeline_layout = layout;
+        self.swapchain_framebuffers = swapchain_framebuffers;
         self.command_buffers = command_buffers;
     }
 
