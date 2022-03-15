@@ -31,13 +31,23 @@ fn main() {
         .unwrap();
 
     let mut engine = Engine::new(&window).unwrap();
+    let mut dirty_swapchain = false;
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
 
         match event {
             Event::MainEventsCleared => {
-                engine.update();
+                if dirty_swapchain {
+                    let size = window.inner_size();
+                    println!("{} {}", size.width, size.height);
+                    if size.width > 0 && size.height > 0 {
+                        engine.recreate_swapchain();
+                    } else {
+                        return;
+                    }
+                }
+                dirty_swapchain = engine.update();
             }
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::CloseRequested => { 
@@ -48,9 +58,10 @@ fn main() {
 
                     *control_flow = ControlFlow::Exit 
                 },
-                WindowEvent::Resized { .. } => log::debug!("Resize not implemented!"),
+                WindowEvent::Resized { .. } => dirty_swapchain = true,
                 _ => (),
             },
+            Event::LoopDestroyed => engine.wait_gpu_idle(),
             _ => (),
         }
     });

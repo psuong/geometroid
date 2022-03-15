@@ -1,6 +1,7 @@
 use crate::common::MAX_FRAMES_IN_FLIGHT;
 use crate::engine::shader_utils::read_shader_from_file;
 
+use ash::prelude::VkResult;
 use ash::vk::{
     AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp,
     BlendFactor, BlendOp, ClearColorValue, ClearValue, ColorComponentFlags, CommandBuffer,
@@ -11,7 +12,7 @@ use ash::vk::{
     PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineLayout,
     PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo, PipelineShaderStageCreateInfo,
     PipelineStageFlags, PresentInfoKHR, RenderPass, RenderPassBeginInfo, RenderPassCreateInfo,
-    SampleCountFlags, Semaphore, SemaphoreCreateInfo, ShaderStageFlags, SubmitInfo,
+    SampleCountFlags, SemaphoreCreateInfo, ShaderStageFlags, SubmitInfo,
     SubpassContents, SubpassDependency, SubpassDescription, SUBPASS_EXTERNAL,
 };
 use ash::{
@@ -30,6 +31,7 @@ use ash::{
     },
     Device, Entry, Instance,
 };
+use std::panic;
 use std::{
     error::Error,
     ffi::{CStr, CString},
@@ -53,12 +55,13 @@ use self::{shader_utils::create_shader_module, utils::SwapchainProperties};
 use crate::{common::HEIGHT, engine::utils::SwapchainSupportDetails, WIDTH};
 
 pub struct Engine {
+    resize_dimensions: Option<[u32; 2]>,
     physical_device: PhysicalDevice,
     queue_families_indices: QueueFamiliesIndices,
     graphics_queue: Queue,
     present_queue: Queue,
     _images: Vec<Image>,
-    _swapchain_properties: SwapchainProperties,
+    swapchain_properties: SwapchainProperties,
     command_buffers: Vec<CommandBuffer>,
     vk_context: VkContext,
     swapchain: Swapchain,
@@ -139,12 +142,13 @@ impl Engine {
         let in_flight_frames = Self::create_sync_objects(vk_context.device_ref());
 
         Ok(Engine {
+            resize_dimensions: None,
             physical_device,
             queue_families_indices,
             graphics_queue,
             present_queue,
             _images: images,
-            _swapchain_properties: properties,
+            swapchain_properties: properties,
             vk_context,
             swapchain,
             swapchain_khr,
@@ -159,12 +163,13 @@ impl Engine {
         })
     }
 
-    pub fn update(&mut self) {
-        self.draw_frame();
+    pub fn update(&mut self) -> bool {
+        let draw_frame = self.draw_frame();
         self.wait_gpu_idle();
+        return draw_frame
     }
 
-    fn draw_frame(&mut self) {
+    fn draw_frame(&mut self) -> bool {
         log::trace!("Drawing frames");
 
         let sync_objects = self.in_flight_frames.next().unwrap();
@@ -181,16 +186,21 @@ impl Engine {
             device.reset_fences(&wait_fences).unwrap()
         };
 
-        let image_index = unsafe {
-            self.swapchain
-                .acquire_next_image(
-                    self.swapchain_khr,
-                    u64::MAX,
-                    image_available_semaphore,
-                    Fence::null(),
-                )
-                .unwrap()
-                .0
+        let result = unsafe {
+            self.swapchain.acquire_next_image(
+                self.swapchain_khr, 
+                std::u64::MAX,
+                image_available_semaphore, 
+                Fence::null()
+            )
+        };
+
+        let image_index = match result {
+            Ok((image_index, _)) => image_index,
+            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
+                return true;
+            }
+            Err(error) => panic!("Error while acquiring next image. Cause: {}", error),
         };
 
         let wait_semaphores = [image_available_semaphore];
@@ -223,58 +233,86 @@ impl Engine {
                 .wait_semaphores(&signal_semaphores)
                 .swapchains(&swapchains)
                 .image_indices(&images_indices)
-                //.results()
+                //.results() // null since we only have 1 swapchain
                 .build();
 
-            unsafe {
+            let result = unsafe {
                 self.swapchain
                     .queue_present(self.present_queue, &present_info)
-                    .unwrap()
             };
+
+            match result {
+                Ok(true) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => return true,
+                Err(error) => panic!("Failed to present queue. Cause: {}", error),
+                _ => {}
+            }
         }
+
+        false
     }
 
     fn cleanup_swapchain(&mut self) {
+        let device = self.vk_context.device_ref();
         unsafe {
             self.swapchain_framebuffers
                 .iter()
-                .for_each(|f| self.vk_context.device_ref().destroy_framebuffer(*f, None));
-
-            self.vk_context.device_ref()
-                .free_command_buffers(self.command_pool, &self.command_buffers);
-            self.vk_context.device_ref()
-                .destroy_pipeline_layout(self.pipeline_layout, None);
-            self.vk_context.device_ref()
-                .destroy_render_pass(self.render_pass, None);
+                .for_each(|f| device.destroy_framebuffer(*f, None));
+            device.free_command_buffers(self.command_pool, &self.command_buffers);
+            device.destroy_pipeline(self.pipeline, None);
+            device.destroy_pipeline_layout(self.pipeline_layout, None);
+            device.destroy_render_pass(self.render_pass, None);
             self.swapchain_image_views
                 .iter()
-                .for_each(|v| self.vk_context.device_ref().destroy_image_view(*v, None));
+                .for_each(|v| device.destroy_image_view(*v, None));
             self.swapchain.destroy_swapchain(self.swapchain_khr, None);
         }
     }
 
-    fn recreate_swapchain(&mut self) {
+    pub fn recreate_swapchain(&mut self) {
         log::debug!("Recreating swapchain");
 
         // We must wait for the device to be idling before we recreate the swapchain
-        unsafe { self.vk_context.device_ref().device_wait_idle().unwrap() };
+        self.wait_gpu_idle();
 
         self.cleanup_swapchain();
 
-        // TODO: Determine the new dimensions from winit.
-        let dimensions = [800, 600];
+        let device = self.vk_context.device_ref();
+        let dimensions = self.resize_dimensions.unwrap_or([
+            self.swapchain_properties.extent.width,
+            self.swapchain_properties.extent.height,
+        ]);
 
         let (swapchain, swapchain_khr, properties, images) = Self::create_swapchain_and_images(
             &self.vk_context,
             self.queue_families_indices,
             dimensions
         );
-        let swapchain_image_views = Self::create_swapchain_image_views(
-            self.vk_context.device_ref(), 
-            &images, 
+        let swapchain_image_views = Self::create_swapchain_image_views(device, &images, properties);
+
+        let render_pass = Self::create_render_pass(device, properties);
+        let (pipeline, layout) = Self::create_pipeline(device, properties, render_pass);
+        let swapchain_framebuffers = Self::create_framebuffers(
+            device, 
+            &swapchain_image_views, 
+            render_pass, 
             properties);
 
-        // TODO: Recreate the renderpass on a resize.
+        let command_buffers = Self::create_and_register_command_buffers(
+            device, 
+            self.command_pool, 
+            &swapchain_framebuffers, 
+            render_pass, 
+            properties, 
+            pipeline);
+
+        self.swapchain = swapchain;
+        self.swapchain_khr = swapchain_khr;
+        self.swapchain_properties = properties;
+        self.swapchain_image_views = swapchain_image_views;
+        self.render_pass = render_pass;
+        self.pipeline = pipeline;
+        self.pipeline_layout = layout;
+        self.command_buffers = command_buffers;
     }
 
     /// Force the engine to wait because ALL vulkan operations are async.
@@ -963,25 +1001,26 @@ impl Engine {
 impl Drop for Engine {
     fn drop(&mut self) {
         log::info!("Releasing engine.");
-        self.in_flight_frames.destroy(self.vk_context.device_ref());
+        self.cleanup_swapchain();
+
         let device = self.vk_context.device_ref();
+        self.in_flight_frames.destroy(self.vk_context.device_ref());
         unsafe {
-            log::debug!("Cleaning up the semaphores...");
             log::debug!("Cleaning up CommandPool...");
             device.destroy_command_pool(self.command_pool, None);
 
             log::debug!("Cleaning up framebuffers...");
             // Framebuffers need to be destroyed before the pipeline.
-            self.swapchain_framebuffers.iter().for_each(|framebuffer| {
-                device.destroy_framebuffer(*framebuffer, None);
-            });
-            device.destroy_pipeline(self.pipeline, None);
-            device.destroy_pipeline_layout(self.pipeline_layout, None);
-            device.destroy_render_pass(self.render_pass, None);
-            self.swapchain_image_views
-                .iter()
-                .for_each(|v| device.destroy_image_view(*v, None));
-            self.swapchain.destroy_swapchain(self.swapchain_khr, None);
+            // self.swapchain_framebuffers.iter().for_each(|framebuffer| {
+            //     device.destroy_framebuffer(*framebuffer, None);
+            // });
+            // device.destroy_pipeline(self.pipeline, None);
+            // device.destroy_pipeline_layout(self.pipeline_layout, None);
+            // device.destroy_render_pass(self.render_pass, None);
+            // self.swapchain_image_views
+            //     .iter()
+            //     .for_each(|v| device.destroy_image_view(*v, None));
+            // self.swapchain.destroy_swapchain(self.swapchain_khr, None);
         }
     }
 }
