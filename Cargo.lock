@@ -433,6 +433,7 @@ dependencies = [
  "env_logger",
  "glam",
  "log",
+ "memoffset",
  "winit",
 ]
 

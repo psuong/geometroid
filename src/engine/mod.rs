@@ -1,4 +1,5 @@
 use crate::common::MAX_FRAMES_IN_FLIGHT;
+use crate::engine::render::Vertex;
 use crate::engine::shader_utils::read_shader_from_file;
 
 use ash::vk::{
@@ -666,11 +667,14 @@ impl Engine {
         // TODO: Implement the vertex layout
         todo!("Implement the vertex layouts!");
 
+        let vertex_binding_descs = [Vertex::get_binding_description()];
+        let vertex_attribute_descs = Vertex::get_attribute_descriptions();
+
         // Describes the layout of the vertex data.
         // TODO: Uncomment when I create a mesh struct.
         let vertex_input_info = PipelineVertexInputStateCreateInfo::builder()
-            // .vertex_binding_descriptions(vertex_binding_descriptions)
-            // .vertex_attribute_descriptions(vertex_attribute_descriptions)
+            .vertex_binding_descriptions(&vertex_binding_descs)
+            .vertex_attribute_descriptions(&vertex_attribute_descs)
             .build();
 
         // Describes the kind of input geometry that will be drawn from the vertices and if primtive
