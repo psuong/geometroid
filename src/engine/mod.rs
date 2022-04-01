@@ -41,6 +41,7 @@ mod context;
 mod debug;
 mod shader_utils;
 mod utils;
+mod render;
 
 use context::VkContext;
 use debug::{
@@ -661,6 +662,9 @@ impl Engine {
             .build();
 
         let shader_states_info = [vertex_shader_state_info, fragment_shader_state_info];
+
+        // TODO: Implement the vertex layout
+        todo!("Implement the vertex layouts!");
 
         // Describes the layout of the vertex data.
         // TODO: Uncomment when I create a mesh struct.
