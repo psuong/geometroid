@@ -2,13 +2,16 @@ use crate::common::MAX_FRAMES_IN_FLIGHT;
 use crate::engine::render::Vertex;
 use crate::engine::shader_utils::read_shader_from_file;
 
+use ash::util::Align;
 use ash::vk::{
     AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp,
-    BlendFactor, BlendOp, ClearColorValue, ClearValue, ColorComponentFlags, CommandBuffer,
-    CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel, CommandBufferUsageFlags,
-    CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo, Fence, FenceCreateFlags,
-    FenceCreateInfo, Framebuffer, FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo,
-    ImageLayout, InstanceCreateInfo, LogicOp, Pipeline, PipelineBindPoint, PipelineCache,
+    BlendFactor, BlendOp, Buffer, BufferCreateInfo, BufferUsageFlags, ClearColorValue, ClearValue,
+    ColorComponentFlags, CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo,
+    CommandBufferLevel, CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags,
+    CommandPoolCreateInfo, DeviceMemory, Fence, FenceCreateFlags, FenceCreateInfo, Framebuffer,
+    FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo, ImageLayout, InstanceCreateInfo,
+    LogicOp, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements,
+    PhysicalDeviceMemoryProperties, Pipeline, PipelineBindPoint, PipelineCache,
     PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineLayout,
     PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo, PipelineShaderStageCreateInfo,
     PipelineStageFlags, PresentInfoKHR, RenderPass, RenderPassBeginInfo, RenderPassCreateInfo,
@@ -31,6 +34,7 @@ use ash::{
     },
     Device, Entry, Instance,
 };
+use std::mem::{align_of, size_of};
 use std::panic;
 use std::{
     error::Error,
@@ -38,11 +42,11 @@ use std::{
 };
 use winit::window::Window;
 
-mod context;
-mod debug;
-mod shader_utils;
-mod utils;
-mod render;
+pub mod context;
+pub mod debug;
+pub mod render;
+pub mod shader_utils;
+pub mod utils;
 
 use context::VkContext;
 use debug::{
@@ -50,6 +54,7 @@ use debug::{
 };
 use utils::QueueFamiliesIndices;
 
+use self::render::VERTICES;
 use self::utils::{InFlightFrames, SyncObjects};
 use self::{shader_utils::create_shader_module, utils::SwapchainProperties};
 use crate::{common::HEIGHT, engine::utils::SwapchainSupportDetails, WIDTH};
@@ -62,6 +67,8 @@ pub struct Engine {
     present_queue: Queue,
     _images: Vec<Image>,
     swapchain_properties: SwapchainProperties,
+    vertex_buffer: Buffer,
+    vertex_buffer_memory: DeviceMemory,
     command_buffers: Vec<CommandBuffer>,
     vk_context: VkContext,
     swapchain: Swapchain,
@@ -87,6 +94,10 @@ impl Engine {
 
         let (physical_device, queue_families_indices) =
             Self::pick_physical_device(&instance, &surface, surface_khr);
+
+        let memory_properties =
+            unsafe { instance.get_physical_device_memory_properties(physical_device) };
+
         let (logical_device, graphics_queue, present_queue) =
             Self::create_logical_device_with_graphics_queue(
                 &instance,
@@ -130,12 +141,17 @@ impl Engine {
             physical_device,
         );
 
+        // TODO: Create the vertex_buffer
+        let (vertex_buffer, vertex_buffer_memory) =
+            Self::create_vertex_buffer(vk_context.device_ref(), memory_properties);
+
         let command_buffers = Self::create_and_register_command_buffers(
             &vk_context.device_ref(),
             command_pool,
             &swapchain_framebuffers,
             render_pass,
             properties,
+            vertex_buffer,
             pipeline,
         );
 
@@ -160,6 +176,8 @@ impl Engine {
             command_pool,
             command_buffers,
             in_flight_frames,
+            vertex_buffer,
+            vertex_buffer_memory
         })
     }
 
@@ -312,6 +330,7 @@ impl Engine {
             &swapchain_framebuffers,
             render_pass,
             properties,
+            self.vertex_buffer,
             pipeline,
         );
 
@@ -664,9 +683,6 @@ impl Engine {
 
         let shader_states_info = [vertex_shader_state_info, fragment_shader_state_info];
 
-        // TODO: Implement the vertex layout
-        todo!("Implement the vertex layouts!");
-
         let vertex_binding_descs = [Vertex::get_binding_description()];
         let vertex_attribute_descs = Vertex::get_attribute_descriptions();
 
@@ -881,6 +897,63 @@ impl Engine {
             .collect::<Vec<Framebuffer>>()
     }
 
+    fn create_vertex_buffer(
+        device: &Device,
+        mem_properties: PhysicalDeviceMemoryProperties,
+    ) -> (Buffer, DeviceMemory) {
+        let buffer_info = BufferCreateInfo::builder()
+            .size((VERTICES.len() * size_of::<Vertex>()) as u64)
+            .usage(BufferUsageFlags::VERTEX_BUFFER)
+            .sharing_mode(SharingMode::EXCLUSIVE)
+            .build();
+
+        let buffer = unsafe { device.create_buffer(&buffer_info, None).unwrap() };
+
+        let mem_requirements = unsafe { device.get_buffer_memory_requirements(buffer) };
+        let mem_type = Self::find_memory_type(
+            mem_requirements,
+            mem_properties,
+            MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
+        );
+
+        let alloc_info = MemoryAllocateInfo::builder()
+            .allocation_size(mem_requirements.size)
+            .memory_type_index(mem_type)
+            .build();
+        let memory = unsafe { device.allocate_memory(&alloc_info, None).unwrap() };
+        unsafe {
+            device.bind_buffer_memory(buffer, memory, 0).unwrap();
+
+            let data_ptr = device
+                .map_memory(memory, 0, buffer_info.size, MemoryMapFlags::empty())
+                .unwrap();
+            let mut align = Align::new(data_ptr, align_of::<u32>() as _, mem_requirements.size);
+            // Copy the data from the CPU to the GPU here
+            align.copy_from_slice(&VERTICES);
+            device.unmap_memory(memory);
+        };
+
+        (buffer, memory)
+    }
+
+    // TODO: Add docstrings
+    fn find_memory_type(
+        requirements: MemoryRequirements,
+        mem_properties: PhysicalDeviceMemoryProperties,
+        required_properties: MemoryPropertyFlags,
+    ) -> u32 {
+        for i in 0..mem_properties.memory_type_count {
+            if requirements.memory_type_bits & (1 << i) != 0
+                && mem_properties.memory_types[i as usize]
+                    .property_flags
+                    .contains(required_properties)
+            {
+                return i;
+            }
+        }
+        panic!("Failed to find a suitable memory type!");
+    }
+
     /// We need a command pool which stores all command buffers. Manage some unmanaged memory
     /// cause never trust the idiot behind the screen to program something :)
     fn create_command_pool(
@@ -911,6 +984,7 @@ impl Engine {
         framebuffers: &[Framebuffer],
         render_pass: RenderPass,
         swapchain_properties: SwapchainProperties,
+        vertex_buffer: Buffer,
         graphics_pipeline: Pipeline,
     ) -> Vec<CommandBuffer> {
         let allocate_info = CommandBufferAllocateInfo::builder()
@@ -968,17 +1042,26 @@ impl Engine {
                 }
 
                 unsafe {
-                    device.cmd_bind_pipeline(buffer, PipelineBindPoint::GRAPHICS, graphics_pipeline)
+                    device.cmd_bind_pipeline(
+                        buffer,
+                        PipelineBindPoint::GRAPHICS,
+                        graphics_pipeline,
+                    );
+
+                    // Bind vertex buffer
+                    let vertex_buffers = [vertex_buffer];
+                    let offsets = [0];
+                    device.cmd_bind_vertex_buffers(buffer, 0, &vertex_buffers, &offsets);
+
+                    // Playback the command buffer
+                    device.cmd_draw(buffer, 3, 1, 0, 0);
+
+                    // End the renderpass
+                    device.cmd_end_render_pass(buffer);
+
+                    // End the command buffer
+                    device.end_command_buffer(buffer).unwrap();
                 }
-
-                // Playback the command buffer
-                unsafe { device.cmd_draw(buffer, 3, 1, 0, 0) };
-
-                // End the renderpass
-                unsafe { device.cmd_end_render_pass(buffer) };
-
-                // End the command buffer
-                unsafe { device.end_command_buffer(buffer).unwrap() };
             });
         buffers
     }
