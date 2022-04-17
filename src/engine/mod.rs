@@ -8,10 +8,10 @@ use ash::vk::{
     BlendFactor, BlendOp, Buffer, BufferCreateInfo, BufferUsageFlags, ClearColorValue, ClearValue,
     ColorComponentFlags, CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo,
     CommandBufferLevel, CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags,
-    CommandPoolCreateInfo, DeviceMemory, Fence, FenceCreateFlags, FenceCreateInfo, Framebuffer,
-    FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo, ImageLayout, InstanceCreateInfo,
-    LogicOp, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements,
-    PhysicalDeviceMemoryProperties, Pipeline, PipelineBindPoint, PipelineCache,
+    CommandPoolCreateInfo, DeviceMemory, DeviceSize, Fence, FenceCreateFlags, FenceCreateInfo,
+    Framebuffer, FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo, ImageLayout,
+    InstanceCreateInfo, LogicOp, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags,
+    MemoryRequirements, PhysicalDeviceMemoryProperties, Pipeline, PipelineBindPoint, PipelineCache,
     PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineLayout,
     PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo, PipelineShaderStageCreateInfo,
     PipelineStageFlags, PresentInfoKHR, RenderPass, RenderPassBeginInfo, RenderPassCreateInfo,
@@ -79,6 +79,7 @@ pub struct Engine {
     render_pass: RenderPass,
     swapchain_framebuffers: Vec<Framebuffer>,
     command_pool: CommandPool,
+    transient_command_pool: CommandPool,
     in_flight_frames: InFlightFrames,
 }
 
@@ -141,9 +142,20 @@ impl Engine {
             physical_device,
         );
 
-        // TODO: Create the vertex_buffer
-        let (vertex_buffer, vertex_buffer_memory) =
-            Self::create_vertex_buffer(vk_context.device_ref(), memory_properties);
+        let transient_command_pool = Self::create_command_pool(
+            vk_context.device_ref(),
+            vk_context.instance_ref(),
+            vk_context.surface_ref(),
+            surface_khr,
+            physical_device,
+        );
+
+        let (vertex_buffer, vertex_buffer_memory) = Self::create_vertex_buffer(
+            vk_context.device_ref(),
+            memory_properties,
+            transient_command_pool,
+            graphics_queue,
+        );
 
         let command_buffers = Self::create_and_register_command_buffers(
             &vk_context.device_ref(),
@@ -177,7 +189,7 @@ impl Engine {
             command_buffers,
             in_flight_frames,
             vertex_buffer,
-            vertex_buffer_memory
+            vertex_buffer_memory,
         })
     }
 
@@ -900,7 +912,10 @@ impl Engine {
     fn create_vertex_buffer(
         device: &Device,
         mem_properties: PhysicalDeviceMemoryProperties,
+        command_pool: CommandPool,
+        transfer_queue: Queue,
     ) -> (Buffer, DeviceMemory) {
+        let size = VERTICES.len() as u64 * size_of::<Vertex>() as DeviceSize;
         let buffer_info = BufferCreateInfo::builder()
             .size((VERTICES.len() * size_of::<Vertex>()) as u64)
             .usage(BufferUsageFlags::VERTEX_BUFFER)
@@ -936,7 +951,48 @@ impl Engine {
         (buffer, memory)
     }
 
-    // TODO: Add docstrings
+    /// Creates a buffer and allocates the memory required.
+    /// # Returns
+    /// The buffer, its memory and the actual size in bytes of the allocated memory since it may
+    /// be different from the requested size.
+    fn create_buffer(
+        device: &Device,
+        device_mem_properties: PhysicalDeviceMemoryProperties,
+        size: DeviceSize,
+        usage: BufferUsageFlags,
+        mem_properties: MemoryPropertyFlags,
+    ) -> (Buffer, DeviceMemory, DeviceSize) {
+        let buffer = {
+            let buffer_info = BufferCreateInfo::builder()
+                .size(size)
+                .usage(usage)
+                .sharing_mode(SharingMode::EXCLUSIVE)
+                .build();
+
+            unsafe { device.create_buffer(&buffer_info, None).unwrap() }
+        };
+
+        let mem_requirements = unsafe { device.get_buffer_memory_requirements(buffer) };
+        let memory = {
+            let mem_type =
+                Self::find_memory_type(mem_requirements, device_mem_properties, mem_properties);
+            let alloc_info = MemoryAllocateInfo::builder()
+                .allocation_size(mem_requirements.size)
+                .memory_type_index(mem_type)
+                .build();
+
+            unsafe { device.allocate_memory(&alloc_info, None).unwrap() }
+        };
+
+        unsafe { device.bind_buffer_memory(buffer, memory, 0).unwrap() }
+        (buffer, memory, mem_requirements.size)
+    }
+
+    /// Finds a memory type in the mem_properties that is suitable
+    /// for requirements and supports required_properties.
+    ///
+    /// # Returns
+    /// The index of the memory type from mem_properties.
     fn find_memory_type(
         requirements: MemoryRequirements,
         mem_properties: PhysicalDeviceMemoryProperties,
