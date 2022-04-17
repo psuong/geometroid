@@ -1106,6 +1106,9 @@ impl Drop for Engine {
         let device = self.vk_context.device_ref();
         self.in_flight_frames.destroy(self.vk_context.device_ref());
         unsafe {
+            log::debug!("Freeing vertex buffer memory...");
+            device.destroy_buffer(self.vertex_buffer, None);
+            device.free_memory(self.vertex_buffer_memory, None);
             log::debug!("Cleaning up CommandPool...");
             device.destroy_command_pool(self.command_pool, None);
         }
