@@ -5,18 +5,19 @@ use crate::engine::shader_utils::read_shader_from_file;
 use ash::util::Align;
 use ash::vk::{
     AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp,
-    BlendFactor, BlendOp, Buffer, BufferCreateInfo, BufferUsageFlags, ClearColorValue, ClearValue,
-    ColorComponentFlags, CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo,
-    CommandBufferLevel, CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags,
-    CommandPoolCreateInfo, DeviceMemory, DeviceSize, Fence, FenceCreateFlags, FenceCreateInfo,
-    Framebuffer, FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo, ImageLayout,
-    InstanceCreateInfo, LogicOp, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags,
-    MemoryRequirements, PhysicalDeviceMemoryProperties, Pipeline, PipelineBindPoint, PipelineCache,
-    PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineLayout,
-    PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo, PipelineShaderStageCreateInfo,
-    PipelineStageFlags, PresentInfoKHR, RenderPass, RenderPassBeginInfo, RenderPassCreateInfo,
-    SampleCountFlags, SemaphoreCreateInfo, ShaderStageFlags, SubmitInfo, SubpassContents,
-    SubpassDependency, SubpassDescription, SUBPASS_EXTERNAL,
+    BlendFactor, BlendOp, Buffer, BufferCopy, BufferCreateInfo, BufferUsageFlags, ClearColorValue,
+    ClearValue, ColorComponentFlags, CommandBuffer, CommandBufferAllocateInfo,
+    CommandBufferBeginInfo, CommandBufferLevel, CommandBufferUsageFlags, CommandPool,
+    CommandPoolCreateFlags, CommandPoolCreateInfo, DeviceMemory, DeviceSize, Fence,
+    FenceCreateFlags, FenceCreateInfo, Framebuffer, FramebufferCreateInfo, FrontFace,
+    GraphicsPipelineCreateInfo, ImageLayout, InstanceCreateInfo, LogicOp, MemoryAllocateInfo,
+    MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements, PhysicalDeviceMemoryProperties,
+    Pipeline, PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState,
+    PipelineColorBlendStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo,
+    PipelineMultisampleStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags,
+    PresentInfoKHR, RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags,
+    SemaphoreCreateInfo, ShaderStageFlags, SubmitInfo, SubpassContents, SubpassDependency,
+    SubpassDescription, SUBPASS_EXTERNAL,
 };
 use ash::{
     extensions::{
@@ -186,6 +187,7 @@ impl Engine {
             render_pass,
             swapchain_framebuffers,
             command_pool,
+            transient_command_pool,
             command_buffers,
             in_flight_frames,
             vertex_buffer,
@@ -925,6 +927,8 @@ impl Engine {
         let buffer = unsafe { device.create_buffer(&buffer_info, None).unwrap() };
 
         let mem_requirements = unsafe { device.get_buffer_memory_requirements(buffer) };
+
+        // Use a host visible buffer as a temporary buffer
         let mem_type = Self::find_memory_type(
             mem_requirements,
             mem_properties,
@@ -935,6 +939,10 @@ impl Engine {
             .allocation_size(mem_requirements.size)
             .memory_type_index(mem_type)
             .build();
+
+        // This would be the device's buffer which is the actual vertex buffer.
+        // NOTE: However, I should never allocate for every single vertex buffer. Instead I should
+        // allocate a large chunk of memory and then subdivide it.
         let memory = unsafe { device.allocate_memory(&alloc_info, None).unwrap() };
         unsafe {
             device.bind_buffer_memory(buffer, memory, 0).unwrap();
@@ -944,11 +952,81 @@ impl Engine {
                 .unwrap();
             let mut align = Align::new(data_ptr, align_of::<u32>() as _, mem_requirements.size);
             // Copy the data from the CPU to the GPU here
+            // TODO: If I want to handle uploading different vertices, I will need to make this 
+            // function more generic.
             align.copy_from_slice(&VERTICES);
             device.unmap_memory(memory);
         };
 
         (buffer, memory)
+    }
+    
+    /// Copies the size first bytes of src into dst
+    ///
+    /// Allocates a command buffer allocated from the 'command_pool'. The command buffer is 
+    /// submitted to the transfer_queue.
+    fn copy_buffer(
+        device: &Device,
+        command_pool: CommandPool,
+        transfer_queue: Queue,
+        src: Buffer,
+        dst: Buffer,
+        size: DeviceSize,
+    ) {
+        let command_buffer = {
+            let alloc_info = CommandBufferAllocateInfo::builder()
+                .level(CommandBufferLevel::PRIMARY)
+                .command_pool(command_pool)
+                .command_buffer_count(1)
+                .build();
+
+            unsafe { device.allocate_command_buffers(&alloc_info).unwrap()[0] }
+        };
+
+        let command_buffers = [command_buffer];
+        {
+            // Begin the recording
+            let begin_info = CommandBufferBeginInfo::builder()
+                .flags(CommandBufferUsageFlags::ONE_TIME_SUBMIT)
+                .build();
+
+            unsafe {
+                device
+                    .begin_command_buffer(command_buffer, &begin_info)
+                    .unwrap();
+            };
+        }
+        {
+            // Copy
+            let region = BufferCopy {
+                src_offset: 0,
+                dst_offset: 0,
+                size,
+            };
+            let regions = [region];
+            unsafe {
+                device.cmd_copy_buffer(command_buffer, src, dst, &regions);
+            }
+        }
+        // End the recording
+        unsafe { device.end_command_buffer(command_buffer).unwrap() };
+        // Submit and wait
+        {
+            let submit_info = SubmitInfo::builder()
+                .command_buffers(&command_buffers)
+                .build();
+
+            let submit_infos = [submit_info];
+            unsafe {
+                device
+                    .queue_submit(transfer_queue, &submit_infos, Fence::null())
+                    .unwrap();
+                device.queue_wait_idle(transfer_queue).unwrap();
+            }
+        }
+
+        // Free
+        unsafe { device.free_command_buffers(command_pool, &command_buffers) };
     }
 
     /// Creates a buffer and allocates the memory required.
