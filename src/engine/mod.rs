@@ -1239,6 +1239,7 @@ impl Drop for Engine {
             device.free_memory(self.vertex_buffer_memory, None);
             log::debug!("Cleaning up CommandPool...");
             device.destroy_command_pool(self.command_pool, None);
+            device.destroy_command_pool(self.transient_command_pool, None);
         }
     }
 }
