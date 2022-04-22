@@ -917,45 +917,39 @@ impl Engine {
         command_pool: CommandPool,
         transfer_queue: Queue,
     ) -> (Buffer, DeviceMemory) {
+
         let size = VERTICES.len() as u64 * size_of::<Vertex>() as DeviceSize;
-        let buffer_info = BufferCreateInfo::builder()
-            .size((VERTICES.len() * size_of::<Vertex>()) as u64)
-            .usage(BufferUsageFlags::VERTEX_BUFFER)
-            .sharing_mode(SharingMode::EXCLUSIVE)
-            .build();
 
-        let buffer = unsafe { device.create_buffer(&buffer_info, None).unwrap() };
+        // Create the staging buffer
+        let (staging_buffer, staging_memory, staging_mem_size) = Self::create_buffer(
+            device, 
+            mem_properties, 
+            size, 
+            BufferUsageFlags::TRANSFER_SRC, 
+            MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT);
 
-        let mem_requirements = unsafe { device.get_buffer_memory_requirements(buffer) };
-
-        // Use a host visible buffer as a temporary buffer
-        let mem_type = Self::find_memory_type(
-            mem_requirements,
-            mem_properties,
-            MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
-        );
-
-        let alloc_info = MemoryAllocateInfo::builder()
-            .allocation_size(mem_requirements.size)
-            .memory_type_index(mem_type)
-            .build();
-
-        // This would be the device's buffer which is the actual vertex buffer.
-        // NOTE: However, I should never allocate for every single vertex buffer. Instead I should
-        // allocate a large chunk of memory and then subdivide it.
-        let memory = unsafe { device.allocate_memory(&alloc_info, None).unwrap() };
         unsafe {
-            device.bind_buffer_memory(buffer, memory, 0).unwrap();
-
-            let data_ptr = device
-                .map_memory(memory, 0, buffer_info.size, MemoryMapFlags::empty())
+            let data_ptr = device.map_memory(staging_memory, 0, size, MemoryMapFlags::empty())
                 .unwrap();
-            let mut align = Align::new(data_ptr, align_of::<u32>() as _, mem_requirements.size);
-            // Copy the data from the CPU to the GPU here
-            // TODO: If I want to handle uploading different vertices, I will need to make this 
-            // function more generic.
+            let mut align = Align::new(data_ptr, align_of::<u32>() as _, staging_mem_size);
             align.copy_from_slice(&VERTICES);
-            device.unmap_memory(memory);
+            device.unmap_memory(staging_memory);
+        };
+
+        let (buffer, memory, _) = Self::create_buffer(
+            device, 
+            mem_properties, 
+            size,
+            BufferUsageFlags::TRANSFER_DST | BufferUsageFlags::VERTEX_BUFFER,
+            MemoryPropertyFlags::DEVICE_LOCAL);
+
+        // Copy from staging -> buffer - this will hold the Vertex data
+        Self::copy_buffer(device, command_pool, transfer_queue, staging_buffer, buffer, size);
+
+        // Clean up the staging buffer b/c we've already copied the data!
+        unsafe {
+            device.destroy_buffer(staging_buffer, None);
+            device.free_memory(staging_memory, None);
         };
 
         (buffer, memory)
