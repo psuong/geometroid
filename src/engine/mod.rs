@@ -10,14 +10,14 @@ use ash::vk::{
     CommandBufferBeginInfo, CommandBufferLevel, CommandBufferUsageFlags, CommandPool,
     CommandPoolCreateFlags, CommandPoolCreateInfo, DeviceMemory, DeviceSize, Fence,
     FenceCreateFlags, FenceCreateInfo, Framebuffer, FramebufferCreateInfo, FrontFace,
-    GraphicsPipelineCreateInfo, ImageLayout, InstanceCreateInfo, LogicOp, MemoryAllocateInfo,
-    MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements, PhysicalDeviceMemoryProperties,
-    Pipeline, PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState,
-    PipelineColorBlendStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo,
-    PipelineMultisampleStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags,
-    PresentInfoKHR, RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags,
-    SemaphoreCreateInfo, ShaderStageFlags, SubmitInfo, SubpassContents, SubpassDependency,
-    SubpassDescription, SUBPASS_EXTERNAL,
+    GraphicsPipelineCreateInfo, ImageLayout, IndexType, InstanceCreateInfo, LogicOp,
+    MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements,
+    PhysicalDeviceMemoryProperties, Pipeline, PipelineBindPoint, PipelineCache,
+    PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineLayout,
+    PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo, PipelineShaderStageCreateInfo,
+    PipelineStageFlags, PresentInfoKHR, RenderPass, RenderPassBeginInfo, RenderPassCreateInfo,
+    SampleCountFlags, SemaphoreCreateInfo, ShaderStageFlags, SubmitInfo, SubpassContents,
+    SubpassDependency, SubpassDescription, SUBPASS_EXTERNAL,
 };
 use ash::{
     extensions::{
@@ -70,8 +70,8 @@ pub struct Engine {
     swapchain_properties: SwapchainProperties,
     vertex_buffer: Buffer,
     vertex_buffer_memory: DeviceMemory,
-    // index_buffer: Buffer,
-    // index_buffer_memory: DeviceMemory,
+    index_buffer: Buffer,
+    index_buffer_memory: DeviceMemory,
     command_buffers: Vec<CommandBuffer>,
     vk_context: VkContext,
     swapchain: Swapchain,
@@ -160,6 +160,13 @@ impl Engine {
             graphics_queue,
         );
 
+        let (index_buffer, index_buffer_memory) = Self::create_index_buffer(
+            vk_context.device_ref(),
+            memory_properties,
+            transient_command_pool,
+            graphics_queue,
+        );
+
         let command_buffers = Self::create_and_register_command_buffers(
             &vk_context.device_ref(),
             command_pool,
@@ -167,6 +174,7 @@ impl Engine {
             render_pass,
             properties,
             vertex_buffer,
+            index_buffer,
             pipeline,
         );
 
@@ -194,6 +202,8 @@ impl Engine {
             in_flight_frames,
             vertex_buffer,
             vertex_buffer_memory,
+            index_buffer,
+            index_buffer_memory,
         })
     }
 
@@ -347,6 +357,7 @@ impl Engine {
             render_pass,
             properties,
             self.vertex_buffer,
+            self.index_buffer,
             pipeline,
         );
 
@@ -919,46 +930,49 @@ impl Engine {
         command_pool: CommandPool,
         transfer_queue: Queue,
     ) -> (Buffer, DeviceMemory) {
-
         Self::create_device_local_buffer_with_data::<u32, _>(
-            device, 
-            mem_properties, 
-            command_pool, 
-            transfer_queue, 
-            BufferUsageFlags::VERTEX_BUFFER, 
-            &VERTICES)
+            device,
+            mem_properties,
+            command_pool,
+            transfer_queue,
+            BufferUsageFlags::VERTEX_BUFFER,
+            &VERTICES,
+        )
     }
 
     fn create_index_buffer(
         device: &Device,
         mem_properties: PhysicalDeviceMemoryProperties,
         command_pool: CommandPool,
-        transfer_queue: Queue) -> (Buffer, DeviceMemory) {
+        transfer_queue: Queue,
+    ) -> (Buffer, DeviceMemory) {
         Self::create_device_local_buffer_with_data::<u32, _>(
-            device, 
-            mem_properties, 
-            command_pool, 
-            transfer_queue, 
-            BufferUsageFlags::INDEX_BUFFER, 
-            &INDICES)
+            device,
+            mem_properties,
+            command_pool,
+            transfer_queue,
+            BufferUsageFlags::INDEX_BUFFER,
+            &INDICES,
+        )
     }
 
-    fn create_device_local_buffer_with_data<A, T:Copy>(
-        device: &Device, 
+    fn create_device_local_buffer_with_data<A, T: Copy>(
+        device: &Device,
         mem_properties: PhysicalDeviceMemoryProperties,
         command_pool: CommandPool,
         transfer_queue: Queue,
         usage: BufferUsageFlags,
-        data: &[T]
+        data: &[T],
     ) -> (vk::Buffer, DeviceMemory) {
         let size = (data.len() * size_of::<T>()) as DeviceSize;
 
         let (staging_buffer, staging_memory, staging_mem_size) = Self::create_buffer(
-            device, 
-            mem_properties, 
-            size, 
-            BufferUsageFlags::TRANSFER_SRC, 
-            MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT);
+            device,
+            mem_properties,
+            size,
+            BufferUsageFlags::TRANSFER_SRC,
+            MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
+        );
 
         unsafe {
             let data_ptr = device
@@ -970,14 +984,22 @@ impl Engine {
         };
 
         let (buffer, memory, _) = Self::create_buffer(
-            device, 
-            mem_properties, 
+            device,
+            mem_properties,
             size,
             BufferUsageFlags::TRANSFER_DST | usage,
-            MemoryPropertyFlags::DEVICE_LOCAL);
+            MemoryPropertyFlags::DEVICE_LOCAL,
+        );
 
         // Copy from staging -> buffer - this will hold the Vertex data
-        Self::copy_buffer(device, command_pool, transfer_queue, staging_buffer, buffer, size);
+        Self::copy_buffer(
+            device,
+            command_pool,
+            transfer_queue,
+            staging_buffer,
+            buffer,
+            size,
+        );
 
         // Clean up the staging buffer b/c we've already copied the data!
         unsafe {
@@ -987,10 +1009,9 @@ impl Engine {
         (buffer, memory)
     }
 
-
     /// Copies the size first bytes of src into dst
     ///
-    /// Allocates a command buffer allocated from the 'command_pool'. The command buffer is 
+    /// Allocates a command buffer allocated from the 'command_pool'. The command buffer is
     /// submitted to the transfer_queue.
     fn copy_buffer(
         device: &Device,
@@ -1146,6 +1167,7 @@ impl Engine {
         render_pass: RenderPass,
         swapchain_properties: SwapchainProperties,
         vertex_buffer: Buffer,
+        index_buffer: Buffer,
         graphics_pipeline: Pipeline,
     ) -> Vec<CommandBuffer> {
         let allocate_info = CommandBufferAllocateInfo::builder()
@@ -1214,8 +1236,13 @@ impl Engine {
                     let offsets = [0];
                     device.cmd_bind_vertex_buffers(buffer, 0, &vertex_buffers, &offsets);
 
+                    // Bind the index buffer
+                    // unsafe {
+                        device.cmd_bind_index_buffer(buffer, index_buffer, 0, IndexType::UINT16);
+                    // };
+
                     // Playback the command buffer
-                    device.cmd_draw(buffer, 3, 1, 0, 0);
+                    device.cmd_draw_indexed(buffer, INDICES.len() as _, 1, 0, 0, 0);
 
                     // End the renderpass
                     device.cmd_end_render_pass(buffer);
@@ -1270,6 +1297,9 @@ impl Drop for Engine {
             log::debug!("Freeing vertex buffer memory...");
             device.destroy_buffer(self.vertex_buffer, None);
             device.free_memory(self.vertex_buffer_memory, None);
+            log::debug!("Freeing index buffer memory...");
+            device.destroy_buffer(self.index_buffer, None);
+            device.free_memory(self.index_buffer_memory, None);
             log::debug!("Cleaning up CommandPool...");
             device.destroy_command_pool(self.command_pool, None);
             device.destroy_command_pool(self.transient_command_pool, None);
