@@ -2,7 +2,7 @@ use ash::vk::{self, VertexInputAttributeDescription};
 use glam::{const_vec2, const_vec3, Vec2, Vec3};
 use memoffset::offset_of;
 
-pub const VERTICES: [Vertex; 3] = [
+pub const VERTICES: [Vertex; 4] = [
     Vertex {
         position: const_vec2!([0.0, -0.5]),
         color: const_vec3!([1.0, 0.0, 0.0]),
@@ -15,7 +15,13 @@ pub const VERTICES: [Vertex; 3] = [
         position: const_vec2!([-0.5, 0.5]),
         color: const_vec3!([0.0, 0.0, 1.0]),
     },
+    Vertex {
+        position: const_vec2!([0.5, -0.5]),
+        color: const_vec3!([1.0, 1.0, 1.0]),
+    }
 ];
+
+pub const INDICES: [u16; 6] = [ 0, 1, 2, 2, 3, 0 ];
 
 #[derive(Copy, Clone)]
 pub struct Vertex {

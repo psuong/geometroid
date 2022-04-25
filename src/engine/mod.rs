@@ -55,7 +55,7 @@ use debug::{
 };
 use utils::QueueFamiliesIndices;
 
-use self::render::VERTICES;
+use self::render::{INDICES, VERTICES};
 use self::utils::{InFlightFrames, SyncObjects};
 use self::{shader_utils::create_shader_module, utils::SwapchainProperties};
 use crate::{common::HEIGHT, engine::utils::SwapchainSupportDetails, WIDTH};
@@ -70,6 +70,8 @@ pub struct Engine {
     swapchain_properties: SwapchainProperties,
     vertex_buffer: Buffer,
     vertex_buffer_memory: DeviceMemory,
+    // index_buffer: Buffer,
+    // index_buffer_memory: DeviceMemory,
     command_buffers: Vec<CommandBuffer>,
     vk_context: VkContext,
     swapchain: Swapchain,
@@ -918,9 +920,39 @@ impl Engine {
         transfer_queue: Queue,
     ) -> (Buffer, DeviceMemory) {
 
-        let size = VERTICES.len() as u64 * size_of::<Vertex>() as DeviceSize;
+        Self::create_device_local_buffer_with_data::<u32, _>(
+            device, 
+            mem_properties, 
+            command_pool, 
+            transfer_queue, 
+            BufferUsageFlags::VERTEX_BUFFER, 
+            &VERTICES)
+    }
 
-        // Create the staging buffer
+    fn create_index_buffer(
+        device: &Device,
+        mem_properties: PhysicalDeviceMemoryProperties,
+        command_pool: CommandPool,
+        transfer_queue: Queue) -> (Buffer, DeviceMemory) {
+        Self::create_device_local_buffer_with_data::<u32, _>(
+            device, 
+            mem_properties, 
+            command_pool, 
+            transfer_queue, 
+            BufferUsageFlags::INDEX_BUFFER, 
+            &INDICES)
+    }
+
+    fn create_device_local_buffer_with_data<A, T:Copy>(
+        device: &Device, 
+        mem_properties: PhysicalDeviceMemoryProperties,
+        command_pool: CommandPool,
+        transfer_queue: Queue,
+        usage: BufferUsageFlags,
+        data: &[T]
+    ) -> (vk::Buffer, DeviceMemory) {
+        let size = (data.len() * size_of::<T>()) as DeviceSize;
+
         let (staging_buffer, staging_memory, staging_mem_size) = Self::create_buffer(
             device, 
             mem_properties, 
@@ -929,9 +961,10 @@ impl Engine {
             MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT);
 
         unsafe {
-            let data_ptr = device.map_memory(staging_memory, 0, size, MemoryMapFlags::empty())
+            let data_ptr = device
+                .map_memory(staging_memory, 0, size, MemoryMapFlags::empty())
                 .unwrap();
-            let mut align = Align::new(data_ptr, align_of::<u32>() as _, staging_mem_size);
+            let mut align = Align::new(data_ptr, align_of::<A>() as _, staging_mem_size);
             align.copy_from_slice(&VERTICES);
             device.unmap_memory(staging_memory);
         };
@@ -940,7 +973,7 @@ impl Engine {
             device, 
             mem_properties, 
             size,
-            BufferUsageFlags::TRANSFER_DST | BufferUsageFlags::VERTEX_BUFFER,
+            BufferUsageFlags::TRANSFER_DST | usage,
             MemoryPropertyFlags::DEVICE_LOCAL);
 
         // Copy from staging -> buffer - this will hold the Vertex data
@@ -951,10 +984,10 @@ impl Engine {
             device.destroy_buffer(staging_buffer, None);
             device.free_memory(staging_memory, None);
         };
-
         (buffer, memory)
     }
-    
+
+
     /// Copies the size first bytes of src into dst
     ///
     /// Allocates a command buffer allocated from the 'command_pool'. The command buffer is 
