@@ -42,23 +42,25 @@ fn main() {
 
         match event {
             Event::MainEventsCleared => {
-                if dirty_swapchain {
-                    let size = window.inner_size();
-                    println!("{} {}", size.width, size.height);
-                    if size.width > 0 && size.height > 0 {
-                        engine.recreate_swapchain();
-                    } else {
-                        return;
+                {
+                    if dirty_swapchain {
+                        let size = window.inner_size();
+                        println!("{} {}", size.width, size.height);
+                        if size.width > 0 && size.height > 0 {
+                            engine.recreate_swapchain();
+                        } else {
+                            return;
+                        }
                     }
+                    dirty_swapchain = engine.draw_frame();
                 }
-                dirty_swapchain = engine.update();
             }
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::CloseRequested => { 
-                    log::info!("Waiting for engine to finish rendering...");
+                    // log::info!("Waiting for engine to finish rendering...");
                     // Wait for the engine to finish up since Vulkan is async.
-                    engine.wait_gpu_idle();
-                    log::info!("Engine finished rendering the last frame...Setting controlflow to exit");
+                    // engine.wait_gpu_idle();
+                    // log::info!("Engine finished rendering the last frame...Setting controlflow to exit");
 
                     *control_flow = ControlFlow::Exit 
                 },

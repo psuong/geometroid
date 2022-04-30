@@ -10,12 +10,12 @@ use ash::vk::{
     CommandBufferBeginInfo, CommandBufferLevel, CommandBufferUsageFlags, CommandPool,
     CommandPoolCreateFlags, CommandPoolCreateInfo, DeviceMemory, DeviceSize, Fence,
     FenceCreateFlags, FenceCreateInfo, Framebuffer, FramebufferCreateInfo, FrontFace,
-    GraphicsPipelineCreateInfo, ImageLayout, InstanceCreateInfo, LogicOp, MemoryAllocateInfo,
-    MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements, PhysicalDeviceMemoryProperties,
-    Pipeline, PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState,
-    PipelineColorBlendStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo,
-    PipelineMultisampleStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags,
-    PresentInfoKHR, RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags,
+    GraphicsPipelineCreateInfo, ImageLayout, IndexType, InstanceCreateInfo, LogicOp,
+    MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements,
+    PhysicalDeviceMemoryProperties, Pipeline, PipelineBindPoint, PipelineCache,
+    PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineLayout,
+    PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo, PipelineShaderStageCreateInfo,
+    PipelineStageFlags, RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags,
     SemaphoreCreateInfo, ShaderStageFlags, SubmitInfo, SubpassContents, SubpassDependency,
     SubpassDescription, SUBPASS_EXTERNAL,
 };
@@ -66,12 +66,12 @@ pub struct Engine {
     queue_families_indices: QueueFamiliesIndices,
     graphics_queue: Queue,
     present_queue: Queue,
-    _images: Vec<Image>,
+    images: Vec<Image>,
     swapchain_properties: SwapchainProperties,
     vertex_buffer: Buffer,
     vertex_buffer_memory: DeviceMemory,
-    // index_buffer: Buffer,
-    // index_buffer_memory: DeviceMemory,
+    index_buffer: Buffer,
+    index_buffer_memory: DeviceMemory,
     command_buffers: Vec<CommandBuffer>,
     vk_context: VkContext,
     swapchain: Swapchain,
@@ -138,17 +138,25 @@ impl Engine {
         );
 
         let command_pool = Self::create_command_pool(
-            vk_context.device_ref(), 
-            queue_families_indices, 
-            CommandPoolCreateFlags::empty());
+            vk_context.device_ref(),
+            queue_families_indices,
+            CommandPoolCreateFlags::empty(),
+        );
 
         let transient_command_pool = Self::create_command_pool(
             vk_context.device_ref(),
             queue_families_indices,
-            CommandPoolCreateFlags::empty()
+            CommandPoolCreateFlags::empty(),
         );
 
         let (vertex_buffer, vertex_buffer_memory) = Self::create_vertex_buffer(
+            vk_context.device_ref(),
+            memory_properties,
+            transient_command_pool,
+            graphics_queue,
+        );
+
+        let (index_buffer, index_buffer_memory) = Self::create_index_buffer(
             vk_context.device_ref(),
             memory_properties,
             transient_command_pool,
@@ -162,6 +170,7 @@ impl Engine {
             render_pass,
             properties,
             vertex_buffer,
+            index_buffer,
             pipeline,
         );
 
@@ -173,7 +182,7 @@ impl Engine {
             queue_families_indices,
             graphics_queue,
             present_queue,
-            _images: images,
+            images,
             swapchain_properties: properties,
             vk_context,
             swapchain,
@@ -189,6 +198,8 @@ impl Engine {
             in_flight_frames,
             vertex_buffer,
             vertex_buffer_memory,
+            index_buffer,
+            index_buffer_memory,
         })
     }
 
@@ -223,15 +234,14 @@ impl Engine {
         unsafe { entry.create_instance(&instance_create_info, None).unwrap() }
     }
 
-    pub fn update(&mut self) -> bool {
-        let draw_frame = self.draw_frame();
-        self.wait_gpu_idle();
-        return draw_frame;
-    }
+    // fn update(&mut self) -> bool {
+    //     let draw_frame = self.draw_frame();
+    //     self.wait_gpu_idle();
+    //     draw_frame
+    // }
 
-    fn draw_frame(&mut self) -> bool {
-        log::trace!("Drawing frames");
-
+    pub fn draw_frame(&mut self) -> bool {
+        log::trace!("Drawing frame.");
         let sync_objects = self.in_flight_frames.next().unwrap();
         let image_available_semaphore = sync_objects.image_available_semaphore;
         let render_finished_semaphore = sync_objects.render_finished_semaphore;
@@ -239,11 +249,10 @@ impl Engine {
         let wait_fences = [in_flight_fence];
 
         unsafe {
-            let device = self.vk_context.device_ref();
-            device
+            self.vk_context
+                .device_ref()
                 .wait_for_fences(&wait_fences, true, std::u64::MAX)
-                .unwrap();
-            device.reset_fences(&wait_fences).unwrap()
+                .unwrap()
         };
 
         let result = unsafe {
@@ -251,10 +260,9 @@ impl Engine {
                 self.swapchain_khr,
                 std::u64::MAX,
                 image_available_semaphore,
-                Fence::null(),
+                vk::Fence::null(),
             )
         };
-
         let image_index = match result {
             Ok((image_index, _)) => image_index,
             Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
@@ -263,14 +271,24 @@ impl Engine {
             Err(error) => panic!("Error while acquiring next image. Cause: {}", error),
         };
 
+        unsafe {
+            self.vk_context
+                .device_ref()
+                .reset_fences(&wait_fences)
+                .unwrap()
+        };
+
+        // self.update_uniform_buffers(image_index);
+
+        let device = self.vk_context.device_ref();
         let wait_semaphores = [image_available_semaphore];
         let signal_semaphores = [render_finished_semaphore];
 
+        // Submit command buffer
         {
-            let wait_stages = [PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
+            let wait_stages = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
             let command_buffers = [self.command_buffers[image_index as usize]];
-
-            let submit_info = SubmitInfo::builder()
+            let submit_info = vk::SubmitInfo::builder()
                 .wait_semaphores(&wait_semaphores)
                 .wait_dst_stage_mask(&wait_stages)
                 .command_buffers(&command_buffers)
@@ -278,7 +296,6 @@ impl Engine {
                 .build();
             let submit_infos = [submit_info];
             unsafe {
-                let device = self.vk_context.device_ref();
                 device
                     .queue_submit(self.graphics_queue, &submit_infos, in_flight_fence)
                     .unwrap()
@@ -289,20 +306,20 @@ impl Engine {
         let images_indices = [image_index];
 
         {
-            let present_info = PresentInfoKHR::builder()
+            let present_info = vk::PresentInfoKHR::builder()
                 .wait_semaphores(&signal_semaphores)
                 .swapchains(&swapchains)
                 .image_indices(&images_indices)
-                //.results() // null since we only have 1 swapchain
+                // .results() null since we only have one swapchain
                 .build();
-
             let result = unsafe {
                 self.swapchain
                     .queue_present(self.present_queue, &present_info)
             };
-
             match result {
-                Ok(true) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => return true,
+                Ok(true) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
+                    return true;
+                }
                 Err(error) => panic!("Failed to present queue. Cause: {}", error),
                 _ => {}
             }
@@ -373,12 +390,14 @@ impl Engine {
             render_pass,
             properties,
             self.vertex_buffer,
+            self.index_buffer,
             pipeline,
         );
 
         self.swapchain = swapchain;
         self.swapchain_khr = swapchain_khr;
         self.swapchain_properties = properties;
+        self.images = images;
         self.swapchain_image_views = swapchain_image_views;
         self.render_pass = render_pass;
         self.pipeline = pipeline;
@@ -389,9 +408,8 @@ impl Engine {
 
     /// Force the engine to wait because ALL vulkan operations are async.
     pub fn wait_gpu_idle(&self) {
-        unsafe { self.vk_context.device_ref().device_wait_idle().unwrap() }
+        unsafe { self.vk_context.device_ref().device_wait_idle().unwrap() };
     }
-
 
     fn check_validation_layer_support(entry: &Entry) {
         for required in REQUIRED_LAYERS {
@@ -909,46 +927,49 @@ impl Engine {
         command_pool: CommandPool,
         transfer_queue: Queue,
     ) -> (Buffer, DeviceMemory) {
-
         Self::create_device_local_buffer_with_data::<u32, _>(
-            device, 
-            mem_properties, 
-            command_pool, 
-            transfer_queue, 
-            BufferUsageFlags::VERTEX_BUFFER, 
-            &VERTICES)
+            device,
+            mem_properties,
+            command_pool,
+            transfer_queue,
+            BufferUsageFlags::VERTEX_BUFFER,
+            &VERTICES,
+        )
     }
 
     fn create_index_buffer(
         device: &Device,
         mem_properties: PhysicalDeviceMemoryProperties,
         command_pool: CommandPool,
-        transfer_queue: Queue) -> (Buffer, DeviceMemory) {
-        Self::create_device_local_buffer_with_data::<u32, _>(
-            device, 
-            mem_properties, 
-            command_pool, 
-            transfer_queue, 
-            BufferUsageFlags::INDEX_BUFFER, 
-            &INDICES)
+        transfer_queue: Queue,
+    ) -> (Buffer, DeviceMemory) {
+        Self::create_device_local_buffer_with_data::<u16, _>(
+            device,
+            mem_properties,
+            command_pool,
+            transfer_queue,
+            BufferUsageFlags::INDEX_BUFFER,
+            &INDICES,
+        )
     }
 
-    fn create_device_local_buffer_with_data<A, T:Copy>(
-        device: &Device, 
+    fn create_device_local_buffer_with_data<A, T: Copy>(
+        device: &Device,
         mem_properties: PhysicalDeviceMemoryProperties,
         command_pool: CommandPool,
         transfer_queue: Queue,
         usage: BufferUsageFlags,
-        data: &[T]
+        data: &[T],
     ) -> (vk::Buffer, DeviceMemory) {
         let size = (data.len() * size_of::<T>()) as DeviceSize;
 
         let (staging_buffer, staging_memory, staging_mem_size) = Self::create_buffer(
-            device, 
-            mem_properties, 
-            size, 
-            BufferUsageFlags::TRANSFER_SRC, 
-            MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT);
+            device,
+            mem_properties,
+            size,
+            BufferUsageFlags::TRANSFER_SRC,
+            MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
+        );
 
         unsafe {
             let data_ptr = device
@@ -960,14 +981,22 @@ impl Engine {
         };
 
         let (buffer, memory, _) = Self::create_buffer(
-            device, 
-            mem_properties, 
+            device,
+            mem_properties,
             size,
             BufferUsageFlags::TRANSFER_DST | usage,
-            MemoryPropertyFlags::DEVICE_LOCAL);
+            MemoryPropertyFlags::DEVICE_LOCAL,
+        );
 
         // Copy from staging -> buffer - this will hold the Vertex data
-        Self::copy_buffer(device, command_pool, transfer_queue, staging_buffer, buffer, size);
+        Self::copy_buffer(
+            device,
+            command_pool,
+            transfer_queue,
+            staging_buffer,
+            buffer,
+            size,
+        );
 
         // Clean up the staging buffer b/c we've already copied the data!
         unsafe {
@@ -977,10 +1006,9 @@ impl Engine {
         (buffer, memory)
     }
 
-
     /// Copies the size first bytes of src into dst
     ///
-    /// Allocates a command buffer allocated from the 'command_pool'. The command buffer is 
+    /// Allocates a command buffer allocated from the 'command_pool'. The command buffer is
     /// submitted to the transfer_queue.
     fn copy_buffer(
         device: &Device,
@@ -1110,7 +1138,7 @@ impl Engine {
     fn create_command_pool(
         device: &Device,
         queue_families_indices: QueueFamiliesIndices,
-        create_flags: CommandPoolCreateFlags
+        create_flags: CommandPoolCreateFlags,
     ) -> CommandPool {
         let command_pool_info = CommandPoolCreateInfo::builder()
             .queue_family_index(queue_families_indices.graphics_index)
@@ -1131,6 +1159,7 @@ impl Engine {
         render_pass: RenderPass,
         swapchain_properties: SwapchainProperties,
         vertex_buffer: Buffer,
+        index_buffer: Buffer,
         graphics_pipeline: Pipeline,
     ) -> Vec<CommandBuffer> {
         let allocate_info = CommandBufferAllocateInfo::builder()
@@ -1141,74 +1170,72 @@ impl Engine {
 
         let buffers = unsafe { device.allocate_command_buffers(&allocate_info).unwrap() };
 
-        buffers
-            .iter()
-            .zip(framebuffers.iter())
-            .for_each(|(buffer, framebuffer)| {
-                let buffer = *buffer;
+        buffers.iter().enumerate().for_each(|(i, buffer)| {
+            let buffer = *buffer;
+            let framebuffer = framebuffers[i];
 
-                {
-                    // begin the command buffer
-                    let command_buffer_begin_info = CommandBufferBeginInfo::builder()
-                        .flags(CommandBufferUsageFlags::SIMULTANEOUS_USE)
-                        // typically there would be an inheritance info here.
-                        .build();
-                    unsafe {
-                        device
-                            .begin_command_buffer(buffer, &command_buffer_begin_info)
-                            .unwrap()
-                    };
+            // Begin the command buffer
+            {
+                let command_buffer_begin_info = CommandBufferBeginInfo::builder()
+                    .flags(CommandBufferUsageFlags::SIMULTANEOUS_USE)
+                    .build();
+                unsafe {
+                    device
+                        .begin_command_buffer(buffer, &command_buffer_begin_info)
+                        .unwrap();
                 }
+            }
 
-                {
-                    // Begin the render_pass
-                    let clear_values = [ClearValue {
-                        color: ClearColorValue {
-                            float32: [0.0, 0.0, 0.0, 1.0],
-                        },
-                    }];
+            // begin the render pass
+            {
+                let clear_values = [ClearValue {
+                    color: ClearColorValue {
+                        float32: [0.0, 0.0, 0.0, 1.0],
+                    },
+                }];
 
-                    let render_pass_begin_info = RenderPassBeginInfo::builder()
-                        .render_pass(render_pass)
-                        .framebuffer(*framebuffer)
-                        .render_area(Rect2D {
-                            offset: Offset2D { x: 0, y: 0 },
-                            extent: swapchain_properties.extent,
-                        })
-                        .clear_values(&clear_values)
-                        .build();
-
-                    unsafe {
-                        device.cmd_begin_render_pass(
-                            buffer,
-                            &render_pass_begin_info,
-                            SubpassContents::INLINE,
-                        )
-                    };
-                }
+                let render_pass_begin_info = RenderPassBeginInfo::builder()
+                    .render_pass(render_pass)
+                    .framebuffer(framebuffer)
+                    .render_area(Rect2D {
+                        offset: Offset2D { x: 0, y: 0 },
+                        extent: swapchain_properties.extent,
+                    })
+                    .clear_values(&clear_values)
+                    .build();
 
                 unsafe {
-                    device.cmd_bind_pipeline(
+                    device.cmd_begin_render_pass(
                         buffer,
-                        PipelineBindPoint::GRAPHICS,
-                        graphics_pipeline,
-                    );
+                        &render_pass_begin_info,
+                        SubpassContents::INLINE,
+                    )
+                };
+            }
 
-                    // Bind vertex buffer
-                    let vertex_buffers = [vertex_buffer];
-                    let offsets = [0];
-                    device.cmd_bind_vertex_buffers(buffer, 0, &vertex_buffers, &offsets);
+            // bind the pipeline
+            unsafe {
+                device.cmd_bind_pipeline(buffer, PipelineBindPoint::GRAPHICS, graphics_pipeline)
+            };
 
-                    // Playback the command buffer
-                    device.cmd_draw(buffer, 3, 1, 0, 0);
+            // Bind vertex buffer
+            let vertex_buffers = [vertex_buffer];
+            let offsets = [0];
+            unsafe { device.cmd_bind_vertex_buffers(buffer, 0, &vertex_buffers, &offsets) };
 
-                    // End the renderpass
-                    device.cmd_end_render_pass(buffer);
+            // Bind the index buffer
+            unsafe { device.cmd_bind_index_buffer(buffer, index_buffer, 0, IndexType::UINT32) };
 
-                    // End the command buffer
-                    device.end_command_buffer(buffer).unwrap();
-                }
-            });
+            // TODO: Bind the descriptor set
+            unsafe { device.cmd_draw_indexed(buffer, INDICES.len() as _, 1, 0, 0, 0) };
+
+            // End the renderpass
+            unsafe { device.cmd_end_render_pass(buffer) };
+
+            // End the cmd buffer
+            unsafe { device.end_command_buffer(buffer).unwrap() };
+        });
+
         buffers
     }
 
@@ -1252,9 +1279,14 @@ impl Drop for Engine {
         let device = self.vk_context.device_ref();
         self.in_flight_frames.destroy(self.vk_context.device_ref());
         unsafe {
+            log::debug!("Freeing index buffer memory...");
+            device.free_memory(self.index_buffer_memory, None);
+            device.destroy_buffer(self.index_buffer, None);
+
             log::debug!("Freeing vertex buffer memory...");
             device.destroy_buffer(self.vertex_buffer, None);
             device.free_memory(self.vertex_buffer_memory, None);
+
             log::debug!("Cleaning up CommandPool...");
             device.destroy_command_pool(self.command_pool, None);
             device.destroy_command_pool(self.transient_command_pool, None);
