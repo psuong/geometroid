@@ -89,7 +89,7 @@ pub struct Engine {
 impl Engine {
     pub fn new(_window: &Window) -> Result<Self, Box<dyn Error>> {
         let entry = unsafe { Entry::new().expect("Failed to create entry") };
-        let instance = Self::create_instance(&entry).unwrap();
+        let instance = Self::create_instance(&entry);
         let debug_report_callback = setup_debug_messenger(&entry, &instance);
 
         let surface = Surface::new(&entry, &instance);
@@ -138,19 +138,14 @@ impl Engine {
         );
 
         let command_pool = Self::create_command_pool(
-            vk_context.device_ref(),
-            vk_context.instance_ref(),
-            vk_context.surface_ref(),
-            surface_khr,
-            physical_device,
-        );
+            vk_context.device_ref(), 
+            queue_families_indices, 
+            CommandPoolCreateFlags::empty());
 
         let transient_command_pool = Self::create_command_pool(
             vk_context.device_ref(),
-            vk_context.instance_ref(),
-            vk_context.surface_ref(),
-            surface_khr,
-            physical_device,
+            queue_families_indices,
+            CommandPoolCreateFlags::empty()
         );
 
         let (vertex_buffer, vertex_buffer_memory) = Self::create_vertex_buffer(
@@ -195,6 +190,37 @@ impl Engine {
             vertex_buffer,
             vertex_buffer_memory,
         })
+    }
+
+    fn create_instance(entry: &Entry) -> Instance {
+        let app_name = CString::new("Geometroid").unwrap();
+        let engine_name = CString::new("No Engine").unwrap();
+        let app_info = vk::ApplicationInfo::builder()
+            .application_name(app_name.as_c_str())
+            .application_version(vk::make_api_version(0, 0, 1, 0))
+            .engine_name(engine_name.as_c_str())
+            .engine_version(vk::make_api_version(0, 0, 1, 0))
+            .api_version(vk::make_api_version(0, 1, 0, 0))
+            .build();
+
+        let mut extension_names = utils::required_extension_names();
+        // Enable validation layers
+        if ENABLE_VALIDATION_LAYERS {
+            extension_names.push(DebugUtils::name().as_ptr());
+        }
+
+        let (_layer_names, layer_names_ptrs) = get_layer_names_and_pointers();
+
+        let mut instance_create_info = InstanceCreateInfo::builder()
+            .application_info(&app_info)
+            .enabled_extension_names(&extension_names);
+
+        if ENABLE_VALIDATION_LAYERS {
+            Self::check_validation_layer_support(&entry);
+            instance_create_info = instance_create_info.enabled_layer_names(&layer_names_ptrs);
+        }
+
+        unsafe { entry.create_instance(&instance_create_info, None).unwrap() }
     }
 
     pub fn update(&mut self) -> bool {
@@ -366,42 +392,6 @@ impl Engine {
         unsafe { self.vk_context.device_ref().device_wait_idle().unwrap() }
     }
 
-    fn create_instance(entry: &Entry) -> Result<Instance, Box<dyn Error>> {
-        let app_name = CString::new("Geometroid").unwrap();
-        let engine_name = CString::new("No Engine").unwrap();
-        let app_info = vk::ApplicationInfo::builder()
-            .application_name(app_name.as_c_str())
-            .application_version(vk::make_api_version(0, 0, 1, 0))
-            .engine_name(engine_name.as_c_str())
-            .engine_version(vk::make_api_version(0, 0, 1, 0))
-            .api_version(vk::make_api_version(0, 1, 0, 0))
-            .build();
-
-        let mut extension_names = utils::required_extension_names();
-        // Enable validation layers
-        if ENABLE_VALIDATION_LAYERS {
-            extension_names.push(DebugUtils::name().as_ptr());
-        }
-
-        let layer_names: Vec<CString> = REQUIRED_LAYERS
-            .iter()
-            .map(|name| CString::new(*name).expect("Failed to build CString"))
-            .collect();
-
-        let layer_name_ptrs: Vec<*const i8> =
-            layer_names.iter().map(|name| name.as_ptr()).collect();
-
-        let mut instance_create_info = InstanceCreateInfo::builder()
-            .application_info(&app_info)
-            .enabled_extension_names(&extension_names);
-
-        if ENABLE_VALIDATION_LAYERS {
-            Self::check_validation_layer_support(&entry);
-            instance_create_info = instance_create_info.enabled_layer_names(&layer_name_ptrs);
-        }
-
-        unsafe { Ok(entry.create_instance(&instance_create_info, None)?) }
-    }
 
     fn check_validation_layer_support(entry: &Entry) {
         for required in REQUIRED_LAYERS {
@@ -1119,17 +1109,12 @@ impl Engine {
     /// cause never trust the idiot behind the screen to program something :)
     fn create_command_pool(
         device: &Device,
-        instance: &Instance,
-        surface: &Surface,
-        surface_khr: SurfaceKHR,
-        physical_device: PhysicalDevice,
+        queue_families_indices: QueueFamiliesIndices,
+        create_flags: CommandPoolCreateFlags
     ) -> CommandPool {
-        let (graphics_family, _) =
-            Self::find_queue_families(instance, surface, surface_khr, physical_device);
-
         let command_pool_info = CommandPoolCreateInfo::builder()
-            .queue_family_index(graphics_family.unwrap())
-            .flags(CommandPoolCreateFlags::empty())
+            .queue_family_index(queue_families_indices.graphics_index)
+            .flags(create_flags)
             .build();
 
         unsafe {
