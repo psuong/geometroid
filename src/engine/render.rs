@@ -21,7 +21,7 @@ pub const VERTICES: [Vertex; 4] = [
     }
 ];
 
-pub const INDICES: [u32; 6] = [ 0, 1, 2, 2, 3, 0 ];
+pub const INDICES: [u16; 6] = [ 0, 1, 2, 2, 3, 0 ];
 
 #[derive(Copy, Clone)]
 pub struct Vertex {

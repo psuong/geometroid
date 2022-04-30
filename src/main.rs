@@ -30,11 +30,7 @@ fn main() {
         .build(&event_loop)
         .unwrap();
 
-    log::info!("{}", memoffset::offset_of!(Vertex, position) as u32);
-    log::info!("{}", memoffset::offset_of!(Vertex, color) as u32);
-    log::info!("{}", std::mem::size_of::<Vertex>() as u32);
-
-    let mut engine = Engine::new(&window).unwrap();
+    let mut engine = Engine::new(&window);
     let mut dirty_swapchain = false;
 
     event_loop.run(move |event, _, control_flow| {
@@ -57,11 +53,6 @@ fn main() {
             }
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::CloseRequested => { 
-                    // log::info!("Waiting for engine to finish rendering...");
-                    // Wait for the engine to finish up since Vulkan is async.
-                    // engine.wait_gpu_idle();
-                    // log::info!("Engine finished rendering the last frame...Setting controlflow to exit");
-
                     *control_flow = ControlFlow::Exit 
                 },
                 WindowEvent::Resized { .. } => dirty_swapchain = true,

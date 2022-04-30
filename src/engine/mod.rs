@@ -37,10 +37,7 @@ use ash::{
 };
 use std::mem::{align_of, size_of};
 use std::panic;
-use std::{
-    error::Error,
-    ffi::{CStr, CString},
-};
+use std::ffi::{CStr, CString};
 use winit::window::Window;
 
 pub mod context;
@@ -87,7 +84,7 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub fn new(_window: &Window) -> Result<Self, Box<dyn Error>> {
+    pub fn new(_window: &Window) -> Self {
         let entry = unsafe { Entry::new().expect("Failed to create entry") };
         let instance = Self::create_instance(&entry);
         let debug_report_callback = setup_debug_messenger(&entry, &instance);
@@ -164,7 +161,7 @@ impl Engine {
         );
 
         let command_buffers = Self::create_and_register_command_buffers(
-            &vk_context.device_ref(),
+            vk_context.device_ref(),
             command_pool,
             &swapchain_framebuffers,
             render_pass,
@@ -176,7 +173,7 @@ impl Engine {
 
         let in_flight_frames = Self::create_sync_objects(vk_context.device_ref());
 
-        Ok(Engine {
+        Engine {
             resize_dimensions: None,
             physical_device,
             queue_families_indices,
@@ -200,7 +197,7 @@ impl Engine {
             vertex_buffer_memory,
             index_buffer,
             index_buffer_memory,
-        })
+        }
     }
 
     fn create_instance(entry: &Entry) -> Instance {
@@ -277,8 +274,6 @@ impl Engine {
                 .reset_fences(&wait_fences)
                 .unwrap()
         };
-
-        // self.update_uniform_buffers(image_index);
 
         let device = self.vk_context.device_ref();
         let wait_semaphores = [image_available_semaphore];
@@ -976,7 +971,7 @@ impl Engine {
                 .map_memory(staging_memory, 0, size, MemoryMapFlags::empty())
                 .unwrap();
             let mut align = Align::new(data_ptr, align_of::<A>() as _, staging_mem_size);
-            align.copy_from_slice(&VERTICES);
+            align.copy_from_slice(data);
             device.unmap_memory(staging_memory);
         };
 
@@ -1224,7 +1219,7 @@ impl Engine {
             unsafe { device.cmd_bind_vertex_buffers(buffer, 0, &vertex_buffers, &offsets) };
 
             // Bind the index buffer
-            unsafe { device.cmd_bind_index_buffer(buffer, index_buffer, 0, IndexType::UINT32) };
+            unsafe { device.cmd_bind_index_buffer(buffer, index_buffer, 0, IndexType::UINT16) };
 
             // TODO: Bind the descriptor set
             unsafe { device.cmd_draw_indexed(buffer, INDICES.len() as _, 1, 0, 0, 0) };
