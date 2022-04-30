@@ -139,18 +139,14 @@ impl Engine {
 
         let command_pool = Self::create_command_pool(
             vk_context.device_ref(),
-            vk_context.instance_ref(),
-            vk_context.surface_ref(),
-            surface_khr,
-            physical_device,
+            queue_families_indices,
+            CommandPoolCreateFlags::empty()
         );
 
         let transient_command_pool = Self::create_command_pool(
             vk_context.device_ref(),
-            vk_context.instance_ref(),
-            vk_context.surface_ref(),
-            surface_khr,
-            physical_device,
+            queue_families_indices,
+            CommandPoolCreateFlags::TRANSIENT
         );
 
         let (vertex_buffer, vertex_buffer_memory) = Self::create_vertex_buffer(
@@ -168,7 +164,7 @@ impl Engine {
         );
 
         let command_buffers = Self::create_and_register_command_buffers(
-            &vk_context.device_ref(),
+            vk_context.device_ref(),
             command_pool,
             &swapchain_framebuffers,
             render_pass,
@@ -210,7 +206,7 @@ impl Engine {
     pub fn update(&mut self) -> bool {
         let draw_frame = self.draw_frame();
         self.wait_gpu_idle();
-        return draw_frame;
+        draw_frame
     }
 
     fn draw_frame(&mut self) -> bool {
@@ -963,7 +959,7 @@ impl Engine {
         transfer_queue: Queue,
         usage: BufferUsageFlags,
         data: &[T],
-    ) -> (vk::Buffer, DeviceMemory) {
+    ) -> (Buffer, DeviceMemory) {
         let size = (data.len() * size_of::<T>()) as DeviceSize;
 
         let (staging_buffer, staging_memory, staging_mem_size) = Self::create_buffer(
@@ -1140,17 +1136,12 @@ impl Engine {
     /// cause never trust the idiot behind the screen to program something :)
     fn create_command_pool(
         device: &Device,
-        instance: &Instance,
-        surface: &Surface,
-        surface_khr: SurfaceKHR,
-        physical_device: PhysicalDevice,
+        queue_family_indices: QueueFamiliesIndices,
+        create_flags: CommandPoolCreateFlags
     ) -> CommandPool {
-        let (graphics_family, _) =
-            Self::find_queue_families(instance, surface, surface_khr, physical_device);
-
         let command_pool_info = CommandPoolCreateInfo::builder()
-            .queue_family_index(graphics_family.unwrap())
-            .flags(CommandPoolCreateFlags::empty())
+            .queue_family_index(queue_family_indices.graphics_index)
+            .flags(create_flags)
             .build();
 
         unsafe {
@@ -1237,9 +1228,7 @@ impl Engine {
                     device.cmd_bind_vertex_buffers(buffer, 0, &vertex_buffers, &offsets);
 
                     // Bind the index buffer
-                    // unsafe {
-                        device.cmd_bind_index_buffer(buffer, index_buffer, 0, IndexType::UINT16);
-                    // };
+                    device.cmd_bind_index_buffer(buffer, index_buffer, 0, IndexType::UINT16);
 
                     // Playback the command buffer
                     device.cmd_draw_indexed(buffer, INDICES.len() as _, 1, 0, 0, 0);
