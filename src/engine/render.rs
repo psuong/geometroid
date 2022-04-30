@@ -4,19 +4,19 @@ use memoffset::offset_of;
 
 pub const VERTICES: [Vertex; 4] = [
     Vertex {
-        position: const_vec2!([0.0, -0.5]),
+        position: const_vec2!([-0.5, -0.5]),
         color: const_vec3!([1.0, 0.0, 0.0]),
     },
     Vertex {
-        position: const_vec2!([0.5, 0.5]),
+        position: const_vec2!([0.5, -0.5]),
         color: const_vec3!([0.0, 1.0, 0.0]),
     },
     Vertex {
-        position: const_vec2!([-0.5, 0.5]),
+        position: const_vec2!([0.5, 0.5]),
         color: const_vec3!([0.0, 0.0, 1.0]),
     },
     Vertex {
-        position: const_vec2!([0.5, -0.5]),
+        position: const_vec2!([-0.5, 0.5]),
         color: const_vec3!([1.0, 1.0, 1.0]),
     }
 ];
