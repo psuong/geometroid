@@ -8,16 +8,17 @@ use ash::vk::{
     BlendFactor, BlendOp, Buffer, BufferCopy, BufferCreateInfo, BufferUsageFlags, ClearColorValue,
     ClearValue, ColorComponentFlags, CommandBuffer, CommandBufferAllocateInfo,
     CommandBufferBeginInfo, CommandBufferLevel, CommandBufferUsageFlags, CommandPool,
-    CommandPoolCreateFlags, CommandPoolCreateInfo, DeviceMemory, DeviceSize, Fence,
-    FenceCreateFlags, FenceCreateInfo, Framebuffer, FramebufferCreateInfo, FrontFace,
-    GraphicsPipelineCreateInfo, ImageLayout, IndexType, InstanceCreateInfo, LogicOp,
-    MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements,
-    PhysicalDeviceMemoryProperties, Pipeline, PipelineBindPoint, PipelineCache,
-    PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineLayout,
-    PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo, PipelineShaderStageCreateInfo,
-    PipelineStageFlags, RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags,
-    SemaphoreCreateInfo, ShaderStageFlags, SubmitInfo, SubpassContents, SubpassDependency,
-    SubpassDescription, SUBPASS_EXTERNAL,
+    CommandPoolCreateFlags, CommandPoolCreateInfo, DescriptorSet, DescriptorSetLayout,
+    DescriptorSetLayoutCreateInfo, DeviceMemory, DeviceSize, Fence, FenceCreateFlags,
+    FenceCreateInfo, Framebuffer, FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo,
+    ImageLayout, IndexType, InstanceCreateInfo, LogicOp, MemoryAllocateInfo, MemoryMapFlags,
+    MemoryPropertyFlags, MemoryRequirements, PhysicalDeviceMemoryProperties, Pipeline,
+    PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState,
+    PipelineColorBlendStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo,
+    PipelineMultisampleStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags,
+    RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags, SemaphoreCreateInfo,
+    ShaderStageFlags, SubmitInfo, SubpassContents, SubpassDependency, SubpassDescription,
+    SUBPASS_EXTERNAL,
 };
 use ash::{
     extensions::{
@@ -35,15 +36,16 @@ use ash::{
     },
     Device, Entry, Instance,
 };
+use std::ffi::{CStr, CString};
 use std::mem::{align_of, size_of};
 use std::panic;
-use std::ffi::{CStr, CString};
 use winit::window::Window;
 
 pub mod context;
 pub mod debug;
 pub mod render;
 pub mod shader_utils;
+pub mod uniform_buffer_object;
 pub mod utils;
 
 use context::VkContext;
@@ -53,34 +55,35 @@ use debug::{
 use utils::QueueFamiliesIndices;
 
 use self::render::{INDICES, VERTICES};
+use self::uniform_buffer_object::UniformBufferObject;
 use self::utils::{InFlightFrames, SyncObjects};
 use self::{shader_utils::create_shader_module, utils::SwapchainProperties};
 use crate::{common::HEIGHT, engine::utils::SwapchainSupportDetails, WIDTH};
 
 pub struct Engine {
-    resize_dimensions: Option<[u32; 2]>,
-    physical_device: PhysicalDevice,
-    queue_families_indices: QueueFamiliesIndices,
+    command_buffers: Vec<CommandBuffer>,
+    command_pool: CommandPool,
     graphics_queue: Queue,
-    present_queue: Queue,
     images: Vec<Image>,
-    swapchain_properties: SwapchainProperties,
-    vertex_buffer: Buffer,
-    vertex_buffer_memory: DeviceMemory,
+    in_flight_frames: InFlightFrames,
     index_buffer: Buffer,
     index_buffer_memory: DeviceMemory,
-    command_buffers: Vec<CommandBuffer>,
-    vk_context: VkContext,
-    swapchain: Swapchain,
-    swapchain_khr: SwapchainKHR,
-    swapchain_image_views: Vec<ImageView>,
+    physical_device: PhysicalDevice,
     pipeline: Pipeline,
     pipeline_layout: PipelineLayout,
+    present_queue: Queue,
+    queue_families_indices: QueueFamiliesIndices,
     render_pass: RenderPass,
+    resize_dimensions: Option<[u32; 2]>,
+    swapchain: Swapchain,
     swapchain_framebuffers: Vec<Framebuffer>,
-    command_pool: CommandPool,
+    swapchain_image_views: Vec<ImageView>,
+    swapchain_khr: SwapchainKHR,
+    swapchain_properties: SwapchainProperties,
     transient_command_pool: CommandPool,
-    in_flight_frames: InFlightFrames,
+    vertex_buffer: Buffer,
+    vertex_buffer_memory: DeviceMemory,
+    vk_context: VkContext,
 }
 
 impl Engine {
@@ -124,8 +127,13 @@ impl Engine {
             Self::create_swapchain_image_views(vk_context.device_ref(), &images, properties);
 
         let render_pass = Self::create_render_pass(vk_context.device_ref(), properties);
+        let descriptor_set_layout = Self::create_descriptor_set_layout(vk_context.device_ref());
         let (pipeline, layout) =
-            Self::create_pipeline(vk_context.device_ref(), properties, render_pass);
+            Self::create_pipeline(
+                vk_context.device_ref(), 
+                properties, 
+                render_pass,
+                descriptor_set_layout);
 
         let swapchain_framebuffers = Self::create_framebuffers(
             vk_context.device_ref(),
@@ -230,12 +238,6 @@ impl Engine {
 
         unsafe { entry.create_instance(&instance_create_info, None).unwrap() }
     }
-
-    // fn update(&mut self) -> bool {
-    //     let draw_frame = self.draw_frame();
-    //     self.wait_gpu_idle();
-    //     draw_frame
-    // }
 
     pub fn draw_frame(&mut self) -> bool {
         log::trace!("Drawing frame.");
@@ -671,18 +673,27 @@ impl Engine {
             .collect::<Vec<_>>()
     }
 
+    fn create_descriptor_set_layout(device: &Device) -> DescriptorSetLayout {
+        let bindings = UniformBufferObject::get_descriptor_set_layout_bindings();
+        let layout_info = DescriptorSetLayoutCreateInfo::builder()
+            .bindings(&bindings)
+            .build();
+
+        unsafe {
+            device
+                .create_descriptor_set_layout(&layout_info, None)
+                .unwrap()
+        }
+    }
+
     fn create_pipeline(
         device: &Device,
         swapchain_properties: SwapchainProperties,
         render_pass: RenderPass,
+        descriptor_set_layout: DescriptorSetLayout
     ) -> (Pipeline, PipelineLayout) {
-        // TODO: Load through a config file to make this work?
-        let vert_source = read_shader_from_file(
-            "D:/Documents/Projects/Rust/geometroid/src/shaders/shader.vert.spv",
-        );
-        let frag_source = read_shader_from_file(
-            "D:/Documents/Projects/Rust/geometroid/src/shaders/shader.frag.spv",
-        );
+        let vert_source = read_shader_from_file("shaders/shader.vert.spv");
+        let frag_source = read_shader_from_file("shaders/shader.frag.spv");
 
         let vertex_shader_module = create_shader_module(device, &vert_source);
         let fragment_shader_module = create_shader_module(device, &frag_source);
@@ -791,12 +802,14 @@ impl Engine {
 
         // TODO: Add depth & stencil testing here.
         let layout = {
-            let layout_info = PipelineLayoutCreateInfo::builder()
-                // .set_layouts(set_layouts)
-                // .push_constant_ranges(push_constant_ranges)
+            let layouts = [descriptor_set_layout];
+            let layout_infos = PipelineLayoutCreateInfo::builder()
+                .set_layouts(&layouts)
                 .build();
 
-            unsafe { device.create_pipeline_layout(&layout_info, None).unwrap() }
+            unsafe {
+                device.create_pipeline_layout(&layout_infos, None).unwrap()
+            }
         };
 
         let pipeline_info = GraphicsPipelineCreateInfo::builder()
