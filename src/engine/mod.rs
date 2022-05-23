@@ -63,6 +63,7 @@ use crate::{common::HEIGHT, engine::utils::SwapchainSupportDetails, WIDTH};
 pub struct Engine {
     command_buffers: Vec<CommandBuffer>,
     command_pool: CommandPool,
+    descriptor_set_layout: DescriptorSetLayout,
     graphics_queue: Queue,
     images: Vec<Image>,
     in_flight_frames: InFlightFrames,
@@ -168,6 +169,11 @@ impl Engine {
             graphics_queue,
         );
 
+        let (uniform_buffers, uniform_buffer_memories) = Self::create_uniform_buffers(
+            vk_context.device_ref(), 
+            memory_properties, 
+            images.len());
+
         let command_buffers = Self::create_and_register_command_buffers(
             vk_context.device_ref(),
             command_pool,
@@ -182,29 +188,30 @@ impl Engine {
         let in_flight_frames = Self::create_sync_objects(vk_context.device_ref());
 
         Engine {
-            resize_dimensions: None,
-            physical_device,
-            queue_families_indices,
-            graphics_queue,
-            present_queue,
-            images,
-            swapchain_properties: properties,
-            vk_context,
-            swapchain,
-            swapchain_khr,
-            swapchain_image_views,
-            pipeline_layout: layout,
-            pipeline,
-            render_pass,
-            swapchain_framebuffers,
-            command_pool,
-            transient_command_pool,
             command_buffers,
+            command_pool,
+            descriptor_set_layout,
+            graphics_queue,
+            images,
             in_flight_frames,
-            vertex_buffer,
-            vertex_buffer_memory,
             index_buffer,
             index_buffer_memory,
+            physical_device,
+            pipeline,
+            pipeline_layout: layout,
+            present_queue,
+            queue_families_indices,
+            render_pass,
+            resize_dimensions: None,
+            swapchain,
+            swapchain_framebuffers,
+            swapchain_image_views,
+            swapchain_khr,
+            swapchain_properties: properties,
+            transient_command_pool,
+            vertex_buffer,
+            vertex_buffer_memory,
+            vk_context,
         }
     }
 
@@ -376,7 +383,12 @@ impl Engine {
         let swapchain_image_views = Self::create_swapchain_image_views(device, &images, properties);
 
         let render_pass = Self::create_render_pass(device, properties);
-        let (pipeline, layout) = Self::create_pipeline(device, properties, render_pass);
+        let (pipeline, layout) = Self::create_pipeline(
+            device, 
+            properties, 
+            render_pass,
+            self.descriptor_set_layout);
+
         let swapchain_framebuffers =
             Self::create_framebuffers(device, &swapchain_image_views, render_pass, properties);
 
@@ -692,8 +704,8 @@ impl Engine {
         render_pass: RenderPass,
         descriptor_set_layout: DescriptorSetLayout
     ) -> (Pipeline, PipelineLayout) {
-        let vert_source = read_shader_from_file("shaders/shader.vert.spv");
-        let frag_source = read_shader_from_file("shaders/shader.frag.spv");
+        let vert_source = read_shader_from_file("src/shaders/shader.vert.spv"); 
+        let frag_source = read_shader_from_file("src/shaders/shader.frag.spv");
 
         let vertex_shader_module = create_shader_module(device, &vert_source);
         let fragment_shader_module = create_shader_module(device, &frag_source);
@@ -1012,6 +1024,31 @@ impl Engine {
             device.free_memory(staging_memory, None);
         };
         (buffer, memory)
+    }
+
+    fn create_uniform_buffers(
+        device: &Device, 
+        device_mem_properties: PhysicalDeviceMemoryProperties, 
+        count: usize) -> (Vec<vk::Buffer>, Vec<vk::DeviceMemory>) {
+
+        let size = size_of::<UniformBufferObject>() as vk::DeviceSize;
+        let mut buffers = Vec::new();
+        let mut memories = Vec::new();
+
+        for _ in 0..count {
+            let (buffer, memory, _) = Self::create_buffer(
+                device,
+                device_mem_properties,
+                size,
+                vk::BufferUsageFlags::UNIFORM_BUFFER,
+                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+            );
+            buffers.push(buffer);
+            memories.push(memory);
+        }
+
+        (buffers, memories) 
+
     }
 
     /// Copies the size first bytes of src into dst
