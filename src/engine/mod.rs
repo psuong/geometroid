@@ -36,9 +36,11 @@ use ash::{
     },
     Device, Entry, Instance,
 };
+use glam::{Mat4, Vec3};
 use std::ffi::{CStr, CString};
 use std::mem::{align_of, size_of};
 use std::panic;
+use std::time::Instant;
 use winit::window::Window;
 
 pub mod context;
@@ -76,26 +78,29 @@ pub struct Engine {
     queue_families_indices: QueueFamiliesIndices,
     render_pass: RenderPass,
     resize_dimensions: Option<[u32; 2]>,
+    start_instant: Instant,
     swapchain: Swapchain,
     swapchain_framebuffers: Vec<Framebuffer>,
     swapchain_image_views: Vec<ImageView>,
     swapchain_khr: SwapchainKHR,
     swapchain_properties: SwapchainProperties,
     transient_command_pool: CommandPool,
+    uniform_buffers: Vec<Buffer>,
+    uniform_buffer_memories: Vec<DeviceMemory>,
     vertex_buffer: Buffer,
     vertex_buffer_memory: DeviceMemory,
     vk_context: VkContext,
 }
 
 impl Engine {
-    pub fn new(_window: &Window) -> Self {
+    pub fn new(window: &Window) -> Self {
         let entry = unsafe { Entry::new().expect("Failed to create entry") };
         let instance = Self::create_instance(&entry);
         let debug_report_callback = setup_debug_messenger(&entry, &instance);
 
         let surface = Surface::new(&entry, &instance);
         let surface_khr =
-            unsafe { ash_window::create_surface(&entry, &instance, _window, None).unwrap() };
+            unsafe { ash_window::create_surface(&entry, &instance, window, None).unwrap() };
 
         let (physical_device, queue_families_indices) =
             Self::pick_physical_device(&instance, &surface, surface_khr);
@@ -129,8 +134,7 @@ impl Engine {
 
         let render_pass = Self::create_render_pass(vk_context.device_ref(), properties);
         let descriptor_set_layout = Self::create_descriptor_set_layout(vk_context.device_ref());
-        let (pipeline, layout) =
-            Self::create_pipeline(
+        let (pipeline, layout) = Self::create_pipeline(
                 vk_context.device_ref(), 
                 properties, 
                 render_pass,
@@ -203,12 +207,15 @@ impl Engine {
             queue_families_indices,
             render_pass,
             resize_dimensions: None,
+            start_instant: Instant::now(),
             swapchain,
             swapchain_framebuffers,
             swapchain_image_views,
             swapchain_khr,
             swapchain_properties: properties,
             transient_command_pool,
+            uniform_buffers,
+            uniform_buffer_memories,
             vertex_buffer,
             vertex_buffer_memory,
             vk_context,
@@ -284,6 +291,8 @@ impl Engine {
                 .unwrap()
         };
 
+        self.update_uniform_buffers(image_index);
+
         let device = self.vk_context.device_ref();
         let wait_semaphores = [image_available_semaphore];
         let signal_semaphores = [render_finished_semaphore];
@@ -352,6 +361,40 @@ impl Engine {
         }
     }
 
+    fn update_uniform_buffers(&mut self, current_image: u32) {
+        let elapsed = self.start_instant.elapsed();
+        let elapsed = elapsed.as_secs() as f32 + (elapsed.subsec_millis() as f32) / 1_000 as f32;
+
+        let aspect = self.swapchain_properties.extent.width as f32
+            / self.swapchain_properties.extent.width as f32;
+        let ubo = UniformBufferObject {
+            model: Mat4::from_axis_angle(
+                Vec3::new(0.0, 0.0, 1.0), 
+                (90.0 * elapsed).to_radians()),
+            view: Mat4::look_at_rh(
+                Vec3::new(2.0, 2.0, 2.0),
+                Vec3::new(0.0, 0.0, 0.0),
+                Vec3::new(0.0, 0.0, 1.0),
+            ),
+            proj: Mat4::perspective_rh((45.0 as f32).to_radians(), aspect, 0.1, 10.0),
+        };
+
+        let ubos = [ubo];
+        let buffer_mem = self.uniform_buffer_memories[current_image as usize];
+        let size = size_of::<UniformBufferObject>() as DeviceSize;
+        unsafe {
+            let device = self.vk_context.device_ref();
+            let data_ptr = 
+                device
+                .map_memory(buffer_mem, 0, size, MemoryMapFlags::empty())
+                .unwrap();
+
+            let mut align = ash::util::Align::new(data_ptr, align_of::<f32>() as _, size);
+            align.copy_from_slice(&ubos);
+            device.unmap_memory(buffer_mem);
+        }
+    }
+
     /// When we recreate the swapchain we have to recreate the following
     /// - Image views - b/c they are based directly on the swapchain images
     /// - Render Pass because it depends on the format of the swpachain images
@@ -384,7 +427,7 @@ impl Engine {
 
         let render_pass = Self::create_render_pass(device, properties);
         let (pipeline, layout) = Self::create_pipeline(
-            device, 
+            &device, 
             properties, 
             render_pass,
             self.descriptor_set_layout);
@@ -393,7 +436,7 @@ impl Engine {
             Self::create_framebuffers(device, &swapchain_image_views, render_pass, properties);
 
         let command_buffers = Self::create_and_register_command_buffers(
-            device,
+            &device,
             self.command_pool,
             &swapchain_framebuffers,
             render_pass,
@@ -815,13 +858,11 @@ impl Engine {
         // TODO: Add depth & stencil testing here.
         let layout = {
             let layouts = [descriptor_set_layout];
-            let layout_infos = PipelineLayoutCreateInfo::builder()
+            let layout_info = PipelineLayoutCreateInfo::builder()
                 .set_layouts(&layouts)
                 .build();
 
-            unsafe {
-                device.create_pipeline_layout(&layout_infos, None).unwrap()
-            }
+            unsafe { device.create_pipeline_layout(&layout_info, None).unwrap() }
         };
 
         let pipeline_info = GraphicsPipelineCreateInfo::builder()
@@ -1048,7 +1089,6 @@ impl Engine {
         }
 
         (buffers, memories) 
-
     }
 
     /// Copies the size first bytes of src into dst
@@ -1324,6 +1364,14 @@ impl Drop for Engine {
         let device = self.vk_context.device_ref();
         self.in_flight_frames.destroy(self.vk_context.device_ref());
         unsafe {
+            device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
+            self.uniform_buffer_memories
+                .iter()
+                .for_each(|m| device.free_memory(*m, None));
+            self.uniform_buffers
+                .iter()
+                .for_each(|b| device.destroy_buffer(*b, None));
+
             log::debug!("Freeing index buffer memory...");
             device.free_memory(self.index_buffer_memory, None);
             device.destroy_buffer(self.index_buffer, None);

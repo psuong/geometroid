@@ -7,8 +7,8 @@ use glam::Mat4;
 #[allow(dead_code)]
 pub struct UniformBufferObject {
     pub model: Mat4,
+    pub view: Mat4,
     pub proj: Mat4,
-    pub view: Mat4
 }
 
 impl UniformBufferObject {
