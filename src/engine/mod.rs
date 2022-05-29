@@ -374,7 +374,7 @@ impl Engine {
         }
     }
 
-    /// Create a descriptor pool to allocate the descriptor sets.
+    /// Descriptor set layouts can only be created in a pool like a command buffer.
     fn create_descriptor_pool(device: &Device, size: u32) -> DescriptorPool {
         let pool_size = DescriptorPoolSize {
             ty: DescriptorType::UNIFORM_BUFFER,
@@ -389,6 +389,21 @@ impl Engine {
         unsafe { device.create_descriptor_pool(&pool_info, None).unwrap() }
     }
 
+
+    /// A descriptor set is pretty much like a handle or a pointer to a resource (Image, Buffer, or
+    /// some other information.
+    /// DescriptorSets are just a pack of that information and vulkan requires that data be packed 
+    /// together because it is much more efficient than individually binding resources.
+    ///
+    /// https://vulkan.gpuinfo.org/displaydevicelimit.php?name=maxBoundDescriptorSets&platform=windows 
+    ///
+    /// Some devices only let us bind 4 descriptors and an efficient way to use descriptors is to
+    /// have per type descriptors.
+    ///
+    /// - 0. Engine Global Resources
+    /// - 1. Per Pass Resources
+    /// - 2. Material Resources
+    /// - 3. Per Object Resources
     fn create_descriptor_sets(
         device: &Device,
         pool: DescriptorPool,
@@ -796,6 +811,10 @@ impl Engine {
             .collect::<Vec<_>>()
     }
 
+    /// The descriptor_set_layout lets vulkan know the layout of the uniform buffers so that 
+    /// the shader has enough information.
+    ///
+    /// A common example is binding 2 buffers and an image to the mesh.
     fn create_descriptor_set_layout(device: &Device) -> DescriptorSetLayout {
         let bindings = UniformBufferObject::get_descriptor_set_layout_bindings();
         let layout_info = DescriptorSetLayoutCreateInfo::builder()
