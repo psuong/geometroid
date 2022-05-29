@@ -8,7 +8,7 @@ pub const VERTICES: [Vertex; 4] = [
         color: const_vec3!([1.0, 0.0, 0.0]),
     },
     Vertex {
-        position: const_vec2!([0.5, -0.5]),
+        position: const_vec2!([-0.5, 0.5]),
         color: const_vec3!([0.0, 1.0, 0.0]),
     },
     Vertex {
@@ -16,12 +16,12 @@ pub const VERTICES: [Vertex; 4] = [
         color: const_vec3!([0.0, 0.0, 1.0]),
     },
     Vertex {
-        position: const_vec2!([-0.5, 0.5]),
+        position: const_vec2!([0.5, -0.5]),
         color: const_vec3!([1.0, 1.0, 1.0]),
     }
 ];
 
-pub const INDICES: [u16; 6] = [ 0, 1, 2, 2, 3, 0 ];
+pub const INDICES: [u16; 6] = [ 0, 1, 2, 0, 2, 3 ];
 
 #[derive(Copy, Clone)]
 pub struct Vertex {

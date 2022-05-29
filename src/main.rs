@@ -11,7 +11,7 @@ use winit::{
 };
 
 use crate::common::{HEIGHT, WIDTH};
-use crate::engine::{Engine, render::Vertex};
+use crate::engine::Engine;
 
 fn init_logger(target: Target) {
     Builder::from_default_env()
@@ -38,23 +38,19 @@ fn main() {
 
         match event {
             Event::MainEventsCleared => {
-                {
-                    if dirty_swapchain {
-                        let size = window.inner_size();
-                        println!("{} {}", size.width, size.height);
-                        if size.width > 0 && size.height > 0 {
-                            engine.recreate_swapchain();
-                        } else {
-                            return;
-                        }
+                if dirty_swapchain {
+                    let size = window.inner_size();
+                    println!("{} {}", size.width, size.height);
+                    if size.width > 0 && size.height > 0 {
+                        engine.recreate_swapchain();
+                    } else {
+                        return;
                     }
-                    dirty_swapchain = engine.draw_frame();
                 }
+                dirty_swapchain = engine.draw_frame();
             }
             Event::WindowEvent { event, .. } => match event {
-                WindowEvent::CloseRequested => { 
-                    *control_flow = ControlFlow::Exit 
-                },
+                WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
                 WindowEvent::Resized { .. } => dirty_swapchain = true,
                 _ => (),
             },
@@ -62,6 +58,4 @@ fn main() {
             _ => (),
         }
     });
-    
 }
-

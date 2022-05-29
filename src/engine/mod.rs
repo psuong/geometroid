@@ -8,17 +8,18 @@ use ash::vk::{
     BlendFactor, BlendOp, Buffer, BufferCopy, BufferCreateInfo, BufferUsageFlags, ClearColorValue,
     ClearValue, ColorComponentFlags, CommandBuffer, CommandBufferAllocateInfo,
     CommandBufferBeginInfo, CommandBufferLevel, CommandBufferUsageFlags, CommandPool,
-    CommandPoolCreateFlags, CommandPoolCreateInfo, DescriptorSet, DescriptorSetLayout,
-    DescriptorSetLayoutCreateInfo, DeviceMemory, DeviceSize, Fence, FenceCreateFlags,
-    FenceCreateInfo, Framebuffer, FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo,
-    ImageLayout, IndexType, InstanceCreateInfo, LogicOp, MemoryAllocateInfo, MemoryMapFlags,
-    MemoryPropertyFlags, MemoryRequirements, PhysicalDeviceMemoryProperties, Pipeline,
-    PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState,
-    PipelineColorBlendStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo,
-    PipelineMultisampleStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags,
-    RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags, SemaphoreCreateInfo,
-    ShaderStageFlags, SubmitInfo, SubpassContents, SubpassDependency, SubpassDescription,
-    SUBPASS_EXTERNAL,
+    CommandPoolCreateFlags, CommandPoolCreateInfo, DescriptorPool, DescriptorPoolCreateInfo,
+    DescriptorPoolSize, DescriptorSet, DescriptorSetAllocateInfo, DescriptorSetLayout,
+    DescriptorSetLayoutCreateInfo, DescriptorType, DeviceMemory, DeviceSize, Fence,
+    FenceCreateFlags, FenceCreateInfo, Framebuffer, FramebufferCreateInfo, FrontFace,
+    GraphicsPipelineCreateInfo, ImageLayout, IndexType, InstanceCreateInfo, LogicOp,
+    MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements,
+    PhysicalDeviceMemoryProperties, Pipeline, PipelineBindPoint, PipelineCache,
+    PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineLayout,
+    PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo, PipelineShaderStageCreateInfo,
+    PipelineStageFlags, RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags,
+    SemaphoreCreateInfo, ShaderStageFlags, SubmitInfo, SubpassContents, SubpassDependency,
+    SubpassDescription, SUBPASS_EXTERNAL,
 };
 use ash::{
     extensions::{
@@ -66,6 +67,8 @@ pub struct Engine {
     command_buffers: Vec<CommandBuffer>,
     command_pool: CommandPool,
     descriptor_set_layout: DescriptorSetLayout,
+    descriptor_pool: DescriptorPool,
+    descriptor_sets: Vec<DescriptorSet>,
     graphics_queue: Queue,
     images: Vec<Image>,
     in_flight_frames: InFlightFrames,
@@ -135,10 +138,11 @@ impl Engine {
         let render_pass = Self::create_render_pass(vk_context.device_ref(), properties);
         let descriptor_set_layout = Self::create_descriptor_set_layout(vk_context.device_ref());
         let (pipeline, layout) = Self::create_pipeline(
-                vk_context.device_ref(), 
-                properties, 
-                render_pass,
-                descriptor_set_layout);
+            vk_context.device_ref(),
+            properties,
+            render_pass,
+            descriptor_set_layout,
+        );
 
         let swapchain_framebuffers = Self::create_framebuffers(
             vk_context.device_ref(),
@@ -173,10 +177,15 @@ impl Engine {
             graphics_queue,
         );
 
-        let (uniform_buffers, uniform_buffer_memories) = Self::create_uniform_buffers(
+        let (uniform_buffers, uniform_buffer_memories) =
+            Self::create_uniform_buffers(vk_context.device_ref(), memory_properties, images.len());
+
+        let descriptor_pool = Self::create_descriptor_pool(vk_context.device_ref(), images.len() as _);
+        let descriptor_sets = Self::create_descriptor_sets(
             vk_context.device_ref(), 
-            memory_properties, 
-            images.len());
+            descriptor_pool, 
+            descriptor_set_layout, 
+            &uniform_buffers);
 
         let command_buffers = Self::create_and_register_command_buffers(
             vk_context.device_ref(),
@@ -186,6 +195,8 @@ impl Engine {
             properties,
             vertex_buffer,
             index_buffer,
+            layout,
+            &descriptor_sets,
             pipeline,
         );
 
@@ -195,6 +206,8 @@ impl Engine {
             command_buffers,
             command_pool,
             descriptor_set_layout,
+            descriptor_pool,
+            descriptor_sets,
             graphics_queue,
             images,
             in_flight_frames,
@@ -361,6 +374,65 @@ impl Engine {
         }
     }
 
+    /// Create a descriptor pool to allocate the descriptor sets.
+    fn create_descriptor_pool(device: &Device, size: u32) -> DescriptorPool {
+        let pool_size = DescriptorPoolSize {
+            ty: DescriptorType::UNIFORM_BUFFER,
+            descriptor_count: size,
+        };
+        let pool_sizes = [pool_size];
+
+        let pool_info = DescriptorPoolCreateInfo::builder()
+            .pool_sizes(&pool_sizes)
+            .max_sets(size)
+            .build();
+        unsafe { device.create_descriptor_pool(&pool_info, None).unwrap() }
+    }
+
+    fn create_descriptor_sets(
+        device: &Device,
+        pool: DescriptorPool,
+        layout: DescriptorSetLayout,
+        uniform_buffers: &[Buffer],
+    ) -> Vec<DescriptorSet> {
+        let layouts = (0..uniform_buffers.len())
+            .map(|_| layout)
+            .collect::<Vec<_>>();
+        let alloc_info = DescriptorSetAllocateInfo::builder()
+            .descriptor_pool(pool)
+            .set_layouts(&layouts)
+            .build();
+        let descriptor_sets = unsafe { device.allocate_descriptor_sets(&alloc_info).unwrap() };
+
+        descriptor_sets
+            .iter()
+            .zip(uniform_buffers.iter())
+            .for_each(|(set, buffer)| {
+                let buffer_info = vk::DescriptorBufferInfo::builder()
+                    .buffer(*buffer)
+                    .offset(0)
+                    .range(size_of::<UniformBufferObject>() as vk::DeviceSize)
+                    .build();
+                let buffer_infos = [buffer_info];
+
+                let descriptor_write = vk::WriteDescriptorSet::builder()
+                    .dst_set(*set)
+                    .dst_binding(0)
+                    .dst_array_element(0)
+                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                    .buffer_info(&buffer_infos)
+                    // .image_info() null since we're not updating an image
+                    // .texel_buffer_view() .image_info() null since we're not updating a buffer view
+                    .build();
+                let descriptor_writes = [descriptor_write];
+                let null = [];
+
+                unsafe { device.update_descriptor_sets(&descriptor_writes, &null) }
+            });
+
+        descriptor_sets
+    }
+
     fn update_uniform_buffers(&mut self, current_image: u32) {
         let elapsed = self.start_instant.elapsed();
         let elapsed = elapsed.as_secs() as f32 + (elapsed.subsec_millis() as f32) / 1_000 as f32;
@@ -368,15 +440,13 @@ impl Engine {
         let aspect = self.swapchain_properties.extent.width as f32
             / self.swapchain_properties.extent.width as f32;
         let ubo = UniformBufferObject {
-            model: Mat4::from_axis_angle(
-                Vec3::new(0.0, 0.0, 1.0), 
-                (90.0 * elapsed).to_radians()),
-            view: Mat4::look_at_rh(
+            model: Mat4::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), (90.0 * elapsed).to_radians()),
+            view: Mat4::look_at_lh(
                 Vec3::new(2.0, 2.0, 2.0),
                 Vec3::new(0.0, 0.0, 0.0),
                 Vec3::new(0.0, 0.0, 1.0),
             ),
-            proj: Mat4::perspective_rh((45.0 as f32).to_radians(), aspect, 0.1, 10.0),
+            proj: Mat4::perspective_lh((45.0 as f32).to_radians(), aspect, 0.1, 10.0),
         };
 
         let ubos = [ubo];
@@ -384,8 +454,7 @@ impl Engine {
         let size = size_of::<UniformBufferObject>() as DeviceSize;
         unsafe {
             let device = self.vk_context.device_ref();
-            let data_ptr = 
-                device
+            let data_ptr = device
                 .map_memory(buffer_mem, 0, size, MemoryMapFlags::empty())
                 .unwrap();
 
@@ -426,11 +495,8 @@ impl Engine {
         let swapchain_image_views = Self::create_swapchain_image_views(device, &images, properties);
 
         let render_pass = Self::create_render_pass(device, properties);
-        let (pipeline, layout) = Self::create_pipeline(
-            &device, 
-            properties, 
-            render_pass,
-            self.descriptor_set_layout);
+        let (pipeline, layout) =
+            Self::create_pipeline(&device, properties, render_pass, self.descriptor_set_layout);
 
         let swapchain_framebuffers =
             Self::create_framebuffers(device, &swapchain_image_views, render_pass, properties);
@@ -443,6 +509,8 @@ impl Engine {
             properties,
             self.vertex_buffer,
             self.index_buffer,
+            layout,
+            &self.descriptor_sets,
             pipeline,
         );
 
@@ -745,9 +813,9 @@ impl Engine {
         device: &Device,
         swapchain_properties: SwapchainProperties,
         render_pass: RenderPass,
-        descriptor_set_layout: DescriptorSetLayout
+        descriptor_set_layout: DescriptorSetLayout,
     ) -> (Pipeline, PipelineLayout) {
-        let vert_source = read_shader_from_file("src/shaders/shader.vert.spv"); 
+        let vert_source = read_shader_from_file("src/shaders/shader.vert.spv");
         let frag_source = read_shader_from_file("src/shaders/shader.frag.spv");
 
         let vertex_shader_module = create_shader_module(device, &vert_source);
@@ -1068,10 +1136,10 @@ impl Engine {
     }
 
     fn create_uniform_buffers(
-        device: &Device, 
-        device_mem_properties: PhysicalDeviceMemoryProperties, 
-        count: usize) -> (Vec<vk::Buffer>, Vec<vk::DeviceMemory>) {
-
+        device: &Device,
+        device_mem_properties: PhysicalDeviceMemoryProperties,
+        count: usize,
+    ) -> (Vec<vk::Buffer>, Vec<vk::DeviceMemory>) {
         let size = size_of::<UniformBufferObject>() as vk::DeviceSize;
         let mut buffers = Vec::new();
         let mut memories = Vec::new();
@@ -1088,7 +1156,7 @@ impl Engine {
             memories.push(memory);
         }
 
-        (buffers, memories) 
+        (buffers, memories)
     }
 
     /// Copies the size first bytes of src into dst
@@ -1245,6 +1313,8 @@ impl Engine {
         swapchain_properties: SwapchainProperties,
         vertex_buffer: Buffer,
         index_buffer: Buffer,
+        pipeline_layout: PipelineLayout,
+        descriptor_sets: &[DescriptorSet],
         graphics_pipeline: Pipeline,
     ) -> Vec<CommandBuffer> {
         let allocate_info = CommandBufferAllocateInfo::builder()
@@ -1312,7 +1382,20 @@ impl Engine {
             unsafe { device.cmd_bind_index_buffer(buffer, index_buffer, 0, IndexType::UINT16) };
 
             // TODO: Bind the descriptor set
-            unsafe { device.cmd_draw_indexed(buffer, INDICES.len() as _, 1, 0, 0, 0) };
+            unsafe {
+                let null = [];
+                device.cmd_bind_descriptor_sets(
+                    buffer,
+                    PipelineBindPoint::GRAPHICS,
+                    pipeline_layout,
+                    0,
+                    &descriptor_sets[i..=i],
+                    &null,
+                );
+            };
+
+            // Draw
+            unsafe { device.cmd_draw_indexed(buffer, INDICES.len() as _, 1, 0, 0, 0) }
 
             // End the renderpass
             unsafe { device.cmd_end_render_pass(buffer) };
@@ -1364,6 +1447,7 @@ impl Drop for Engine {
         let device = self.vk_context.device_ref();
         self.in_flight_frames.destroy(self.vk_context.device_ref());
         unsafe {
+            device.destroy_descriptor_pool(self.descriptor_pool, None);
             device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
             self.uniform_buffer_memories
                 .iter()
