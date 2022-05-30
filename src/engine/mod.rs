@@ -75,7 +75,7 @@ pub struct Engine {
     in_flight_frames: InFlightFrames,
     index_buffer: Buffer,
     index_buffer_memory: DeviceMemory,
-    physical_device: PhysicalDevice,
+    _physical_device: PhysicalDevice,
     pipeline: Pipeline,
     pipeline_layout: PipelineLayout,
     present_queue: Queue,
@@ -221,7 +221,7 @@ impl Engine {
             in_flight_frames,
             index_buffer,
             index_buffer_memory,
-            physical_device,
+            _physical_device: physical_device,
             pipeline,
             pipeline_layout: layout,
             present_queue,
@@ -1081,6 +1081,8 @@ impl Engine {
     fn create_texture_image(
         device: &Device,
         device_mem_properties: PhysicalDeviceMemoryProperties,
+        command_pool: CommandPool,
+        copy_queue: Queue
     ) -> (Image, DeviceMemory) {
         let image = image::open("assets/images/statue.jpg").unwrap();
         let image_as_rgb = image.to_rgb8();
@@ -1118,6 +1120,14 @@ impl Engine {
             ImageTiling::OPTIMAL,
             ImageUsageFlags::TRANSFER_DST | ImageUsageFlags::SAMPLED,
         );
+
+        // Transition the image layout and copy the buffer into the image. Transation the layout
+        // again to be readable from the fragment shader for texture sampling.
+        {
+            todo!("Implement transition_image_layout");
+            todo!("Implement copy_buffer_to_image");
+            todo!("Implement transition_image_layout");
+        }
 
         unsafe {
             device.destroy_buffer(buffer, None);
@@ -1171,6 +1181,18 @@ impl Engine {
         };
 
         (image, memory)
+    }
+
+    fn transition_image_layout(
+        device: &Device,
+        command_pool: CommandPool,
+        transition_queue: Queue,
+        image: Image,
+        _format: Format,
+        old_layout: ImageLayout,
+        new_layout: ImageLayout) {
+        
+        todo!("Implement transition_image_layout");
     }
 
     fn create_vertex_buffer(
@@ -1348,6 +1370,15 @@ impl Engine {
 
         // Free
         unsafe { device.free_command_buffers(command_pool, &command_buffers) };
+    }
+
+    fn execute_one_time_commands<F: FnOnce(CommandBuffer)>(
+        device: &Device,
+        command_pool: CommandPool,
+        queue: Queue,
+        executor: F) {
+
+        todo!("Implement one time commands!");
     }
 
     /// Creates a buffer and allocates the memory required.
