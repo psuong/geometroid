@@ -11,8 +11,8 @@ use ash::vk::{
     CommandPoolCreateFlags, CommandPoolCreateInfo, DescriptorPool, DescriptorPoolCreateInfo,
     DescriptorPoolSize, DescriptorSet, DescriptorSetAllocateInfo, DescriptorSetLayout,
     DescriptorSetLayoutCreateInfo, DescriptorType, DeviceMemory, DeviceSize, Fence,
-    FenceCreateFlags, FenceCreateInfo, Framebuffer, FramebufferCreateInfo, FrontFace,
-    GraphicsPipelineCreateInfo, ImageLayout, IndexType, InstanceCreateInfo, LogicOp,
+    FenceCreateFlags, FenceCreateInfo, Format, Framebuffer, FramebufferCreateInfo, FrontFace,
+    GraphicsPipelineCreateInfo, ImageLayout, ImageTiling, IndexType, InstanceCreateInfo, LogicOp,
     MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements,
     PhysicalDeviceMemoryProperties, Pipeline, PipelineBindPoint, PipelineCache,
     PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineLayout,
@@ -38,6 +38,7 @@ use ash::{
     Device, Entry, Instance,
 };
 use glam::{Mat4, Vec3};
+use image::GenericImageView;
 use std::ffi::{CStr, CString};
 use std::mem::{align_of, size_of};
 use std::panic;
@@ -163,6 +164,8 @@ impl Engine {
             CommandPoolCreateFlags::empty(),
         );
 
+        let _image = Self::create_texture_image();
+
         let (vertex_buffer, vertex_buffer_memory) = Self::create_vertex_buffer(
             vk_context.device_ref(),
             memory_properties,
@@ -180,12 +183,14 @@ impl Engine {
         let (uniform_buffers, uniform_buffer_memories) =
             Self::create_uniform_buffers(vk_context.device_ref(), memory_properties, images.len());
 
-        let descriptor_pool = Self::create_descriptor_pool(vk_context.device_ref(), images.len() as _);
+        let descriptor_pool =
+            Self::create_descriptor_pool(vk_context.device_ref(), images.len() as _);
         let descriptor_sets = Self::create_descriptor_sets(
-            vk_context.device_ref(), 
-            descriptor_pool, 
-            descriptor_set_layout, 
-            &uniform_buffers);
+            vk_context.device_ref(),
+            descriptor_pool,
+            descriptor_set_layout,
+            &uniform_buffers,
+        );
 
         let command_buffers = Self::create_and_register_command_buffers(
             vk_context.device_ref(),
@@ -389,13 +394,12 @@ impl Engine {
         unsafe { device.create_descriptor_pool(&pool_info, None).unwrap() }
     }
 
-
     /// A descriptor set is pretty much like a handle or a pointer to a resource (Image, Buffer, or
     /// some other information.
-    /// DescriptorSets are just a pack of that information and vulkan requires that data be packed 
+    /// DescriptorSets are just a pack of that information and vulkan requires that data be packed
     /// together because it is much more efficient than individually binding resources.
     ///
-    /// https://vulkan.gpuinfo.org/displaydevicelimit.php?name=maxBoundDescriptorSets&platform=windows 
+    /// https://vulkan.gpuinfo.org/displaydevicelimit.php?name=maxBoundDescriptorSets&platform=windows
     ///
     /// Some devices only let us bind 4 descriptors and an efficient way to use descriptors is to
     /// have per type descriptors.
@@ -811,7 +815,7 @@ impl Engine {
             .collect::<Vec<_>>()
     }
 
-    /// The descriptor_set_layout lets vulkan know the layout of the uniform buffers so that 
+    /// The descriptor_set_layout lets vulkan know the layout of the uniform buffers so that
     /// the shader has enough information.
     ///
     /// A common example is binding 2 buffers and an image to the mesh.
@@ -1067,6 +1071,50 @@ impl Engine {
                 unsafe { device.create_framebuffer(&framebuffer_info, None).unwrap() }
             })
             .collect::<Vec<Framebuffer>>()
+    }
+
+    fn create_texture_image(
+        device: &Device,
+        device_mem_properties: PhysicalDeviceMemoryProperties,
+    ) {
+        let image = image::open("assets/images/statue.jpg").unwrap();
+        let image_as_rgb = image.to_rgb8();
+
+        let image_width = (&image_as_rgb).width();
+        let image_height = (&image_as_rgb).height();
+
+        let pixels = image_as_rgb.into_raw();
+        let image_size = (pixels.len() * size_of::<u8>()) as DeviceSize;
+
+        let (buffer, memory, mem_size) = Self::create_buffer(
+            device,
+            device_mem_properties,
+            image_size,
+            BufferUsageFlags::TRANSFER_SRC,
+            MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
+        );
+
+        unsafe {
+            let ptr = device
+                .map_memory(memory, 0, image_size, MemoryMapFlags::empty())
+                .unwrap();
+            let mut align = ash::util::Align::new(ptr, align_of::<u8>() as _, mem_size);
+            align.copy_from_slice(&pixels);
+            device.unmap_memory(memory);
+        }
+    }
+
+    fn create_image(
+        device: &Device,
+        device_mem_properties: PhysicalDeviceMemoryProperties,
+        mem_properties: MemoryPropertyFlags,
+        width: u32,
+        height: u32,
+        format: Format,
+        tiling: ImageTiling,
+        usage: ImageUsageFlags,
+    ) -> (Image, DeviceMemory) {
+        todo!("Implement!");
     }
 
     fn create_vertex_buffer(
