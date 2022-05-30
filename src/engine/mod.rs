@@ -10,16 +10,17 @@ use ash::vk::{
     CommandBufferBeginInfo, CommandBufferLevel, CommandBufferUsageFlags, CommandPool,
     CommandPoolCreateFlags, CommandPoolCreateInfo, DescriptorPool, DescriptorPoolCreateInfo,
     DescriptorPoolSize, DescriptorSet, DescriptorSetAllocateInfo, DescriptorSetLayout,
-    DescriptorSetLayoutCreateInfo, DescriptorType, DeviceMemory, DeviceSize, Fence,
+    DescriptorSetLayoutCreateInfo, DescriptorType, DeviceMemory, DeviceSize, Extent3D, Fence,
     FenceCreateFlags, FenceCreateInfo, Format, Framebuffer, FramebufferCreateInfo, FrontFace,
-    GraphicsPipelineCreateInfo, ImageLayout, ImageTiling, IndexType, InstanceCreateInfo, LogicOp,
-    MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements,
-    PhysicalDeviceMemoryProperties, Pipeline, PipelineBindPoint, PipelineCache,
-    PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineLayout,
-    PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo, PipelineShaderStageCreateInfo,
-    PipelineStageFlags, RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags,
-    SemaphoreCreateInfo, ShaderStageFlags, SubmitInfo, SubpassContents, SubpassDependency,
-    SubpassDescription, SUBPASS_EXTERNAL,
+    GraphicsPipelineCreateInfo, ImageCreateFlags, ImageCreateInfo, ImageLayout, ImageTiling,
+    ImageType, IndexType, InstanceCreateInfo, LogicOp, MemoryAllocateInfo, MemoryMapFlags,
+    MemoryPropertyFlags, MemoryRequirements, PhysicalDeviceMemoryProperties, Pipeline,
+    PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState,
+    PipelineColorBlendStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo,
+    PipelineMultisampleStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags,
+    RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags, SemaphoreCreateInfo,
+    ShaderStageFlags, SubmitInfo, SubpassContents, SubpassDependency, SubpassDescription,
+    SUBPASS_EXTERNAL,
 };
 use ash::{
     extensions::{
@@ -38,7 +39,6 @@ use ash::{
     Device, Entry, Instance,
 };
 use glam::{Mat4, Vec3};
-use image::GenericImageView;
 use std::ffi::{CStr, CString};
 use std::mem::{align_of, size_of};
 use std::panic;
@@ -89,6 +89,8 @@ pub struct Engine {
     swapchain_khr: SwapchainKHR,
     swapchain_properties: SwapchainProperties,
     transient_command_pool: CommandPool,
+    texture_image: Image,
+    texture_image_memory: DeviceMemory,
     uniform_buffers: Vec<Buffer>,
     uniform_buffer_memories: Vec<DeviceMemory>,
     vertex_buffer: Buffer,
@@ -164,7 +166,8 @@ impl Engine {
             CommandPoolCreateFlags::empty(),
         );
 
-        let _image = Self::create_texture_image();
+        let (texture_image, texture_image_memory) =
+            Self::create_texture_image(vk_context.device_ref(), memory_properties);
 
         let (vertex_buffer, vertex_buffer_memory) = Self::create_vertex_buffer(
             vk_context.device_ref(),
@@ -231,6 +234,8 @@ impl Engine {
             swapchain_image_views,
             swapchain_khr,
             swapchain_properties: properties,
+            texture_image,
+            texture_image_memory,
             transient_command_pool,
             uniform_buffers,
             uniform_buffer_memories,
@@ -1076,7 +1081,7 @@ impl Engine {
     fn create_texture_image(
         device: &Device,
         device_mem_properties: PhysicalDeviceMemoryProperties,
-    ) {
+    ) -> (Image, DeviceMemory) {
         let image = image::open("assets/images/statue.jpg").unwrap();
         let image_as_rgb = image.to_rgb8();
 
@@ -1102,6 +1107,23 @@ impl Engine {
             align.copy_from_slice(&pixels);
             device.unmap_memory(memory);
         }
+
+        let (image, image_memory) = Self::create_image(
+            device,
+            device_mem_properties,
+            MemoryPropertyFlags::DEVICE_LOCAL,
+            image_width,
+            image_height,
+            Format::R8G8B8A8_UNORM,
+            ImageTiling::OPTIMAL,
+            ImageUsageFlags::TRANSFER_DST | ImageUsageFlags::SAMPLED,
+        );
+
+        unsafe {
+            device.destroy_buffer(buffer, None);
+            device.free_memory(memory, None);
+        }
+        (image, image_memory)
     }
 
     fn create_image(
@@ -1114,7 +1136,41 @@ impl Engine {
         tiling: ImageTiling,
         usage: ImageUsageFlags,
     ) -> (Image, DeviceMemory) {
-        todo!("Implement!");
+        let image_info = ImageCreateInfo::builder()
+            .image_type(ImageType::TYPE_2D)
+            .extent(Extent3D {
+                width,
+                height,
+                depth: 1,
+            })
+            .mip_levels(1)
+            .array_layers(1)
+            .format(format)
+            .tiling(tiling)
+            .initial_layout(ImageLayout::UNDEFINED)
+            .usage(usage)
+            .sharing_mode(SharingMode::EXCLUSIVE)
+            .samples(SampleCountFlags::TYPE_1)
+            .flags(ImageCreateFlags::empty())
+            .build();
+
+        let image = unsafe { device.create_image(&image_info, None).unwrap() };
+        let mem_requirements = unsafe { device.get_image_memory_requirements(image) };
+        let mem_type_index =
+            Self::find_memory_type(mem_requirements, device_mem_properties, mem_properties);
+
+        let alloc_info  = MemoryAllocateInfo::builder()
+            .allocation_size(mem_requirements.size)
+            .memory_type_index(mem_type_index)
+            .build();
+
+        let memory = unsafe {
+            let mem = device.allocate_memory(&alloc_info, None).unwrap();
+            device.bind_image_memory(image, mem, 0).unwrap();
+            mem
+        };
+
+        (image, memory)
     }
 
     fn create_vertex_buffer(
@@ -1530,6 +1586,9 @@ impl Drop for Engine {
             log::debug!("Freeing vertex buffer memory...");
             device.destroy_buffer(self.vertex_buffer, None);
             device.free_memory(self.vertex_buffer_memory, None);
+
+            device.destroy_image(self.texture_image, None);
+            device.free_memory(self.texture_image_memory, None);
 
             log::debug!("Cleaning up CommandPool...");
             device.destroy_command_pool(self.command_pool, None);
