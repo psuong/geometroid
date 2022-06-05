@@ -20,7 +20,7 @@ use ash::vk::{
     PipelineMultisampleStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags,
     RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags, SemaphoreCreateInfo,
     ShaderStageFlags, SubmitInfo, SubpassContents, SubpassDependency, SubpassDescription,
-    SUBPASS_EXTERNAL,
+    SUBPASS_EXTERNAL, ImageMemoryBarrier, QUEUE_FAMILY_IGNORED, ImageSubresource, DependencyFlags,
 };
 use ash::{
     extensions::{
@@ -1082,7 +1082,7 @@ impl Engine {
         device: &Device,
         device_mem_properties: PhysicalDeviceMemoryProperties,
         command_pool: CommandPool,
-        copy_queue: Queue
+        copy_queue: Queue,
     ) -> (Image, DeviceMemory) {
         let image = image::open("assets/images/statue.jpg").unwrap();
         let image_as_rgb = image.to_rgb8();
@@ -1093,6 +1093,7 @@ impl Engine {
         let pixels = image_as_rgb.into_raw();
         let image_size = (pixels.len() * size_of::<u8>()) as DeviceSize;
 
+        // Create a staging buffer here.
         let (buffer, memory, mem_size) = Self::create_buffer(
             device,
             device_mem_properties,
@@ -1102,6 +1103,7 @@ impl Engine {
         );
 
         unsafe {
+            // Copy the data from the pixels we get from the image into our staging buffer
             let ptr = device
                 .map_memory(memory, 0, image_size, MemoryMapFlags::empty())
                 .unwrap();
@@ -1110,6 +1112,8 @@ impl Engine {
             device.unmap_memory(memory);
         }
 
+        // Instead of storing the pixels into a buffer and accessing the buffer, create a 
+        // vulkan image object which can access pixel data via texels.
         let (image, image_memory) = Self::create_image(
             device,
             device_mem_properties,
@@ -1136,6 +1140,11 @@ impl Engine {
         (image, image_memory)
     }
 
+    /// Creates an image with common properties
+    ///
+    /// # Arguments
+    /// usage - Describes how the image will be used. Textures that need to be applied to the mesh
+    /// will typically require that the image is destination & can be sampled by the shader.
     fn create_image(
         device: &Device,
         device_mem_properties: PhysicalDeviceMemoryProperties,
@@ -1147,7 +1156,8 @@ impl Engine {
         usage: ImageUsageFlags,
     ) -> (Image, DeviceMemory) {
         let image_info = ImageCreateInfo::builder()
-            .image_type(ImageType::TYPE_2D)
+            // By declaring the image type as 2D, we access coordinates via x & y
+            .image_type(ImageType::TYPE_2D) 
             .extent(Extent3D {
                 width,
                 height,
@@ -1157,19 +1167,25 @@ impl Engine {
             .array_layers(1)
             .format(format)
             .tiling(tiling)
+            // Undefined layotus will discard the texels, preinitialized ones will preserve the
+            // texels
+            // You may use preinitialized if you want to use the image as a staging image in
+            // combination with with a linear tiling layout.
             .initial_layout(ImageLayout::UNDEFINED)
             .usage(usage)
             .sharing_mode(SharingMode::EXCLUSIVE)
             .samples(SampleCountFlags::TYPE_1)
-            .flags(ImageCreateFlags::empty())
+            .flags(ImageCreateFlags::empty()) // TODO: Look into this when I want to use a terrain.
             .build();
 
         let image = unsafe { device.create_image(&image_info, None).unwrap() };
+
+        // Like a buffer we need to know what are the requirements for the image.
         let mem_requirements = unsafe { device.get_image_memory_requirements(image) };
         let mem_type_index =
             Self::find_memory_type(mem_requirements, device_mem_properties, mem_properties);
 
-        let alloc_info  = MemoryAllocateInfo::builder()
+        let alloc_info = MemoryAllocateInfo::builder()
             .allocation_size(mem_requirements.size)
             .memory_type_index(mem_type_index)
             .build();
@@ -1190,9 +1206,61 @@ impl Engine {
         image: Image,
         _format: Format,
         old_layout: ImageLayout,
-        new_layout: ImageLayout) {
-        
-        todo!("Implement transition_image_layout");
+        new_layout: ImageLayout,
+    ) {
+        Self::execute_one_time_commands(device, command_pool, transition_queue, |buffer| {
+            let (src_access_mask, dst_access_mask, src_stage, dst_stage) =
+                match (old_layout, new_layout) {
+                    (vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL) => (
+                        vk::AccessFlags::empty(),
+                        vk::AccessFlags::TRANSFER_WRITE,
+                        vk::PipelineStageFlags::TOP_OF_PIPE,
+                        vk::PipelineStageFlags::TRANSFER,
+                    ),
+                    (
+                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                        vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    ) => (
+                        vk::AccessFlags::TRANSFER_WRITE,
+                        vk::AccessFlags::SHADER_READ,
+                        vk::PipelineStageFlags::TRANSFER,
+                        vk::PipelineStageFlags::FRAGMENT_SHADER,
+                    ),
+                    _ => panic!(
+                        "Unsupported layout transition({:?} => {:?}).",
+                        old_layout, new_layout
+                    ),
+                };
+            
+            let barrier = ImageMemoryBarrier::builder()
+                .old_layout(old_layout)
+                .new_layout(new_layout)
+                .src_queue_family_index(QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(QUEUE_FAMILY_IGNORED)
+                .image(image)
+                .subresource_range(ImageSubresourceRange {
+                    aspect_mask: ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                })
+                .src_access_mask(src_access_mask)
+                .dst_access_mask(dst_access_mask)
+                .build();
+
+                let barriers = [barrier];
+                unsafe {
+                    device.cmd_pipeline_barrier(
+                        buffer, 
+                        src_stage, 
+                        dst_stage, 
+                        DependencyFlags::empty(), 
+                        &[], 
+                        &[], 
+                        &barriers);
+                }
+        });
     }
 
     fn create_vertex_buffer(
@@ -1372,13 +1440,58 @@ impl Engine {
         unsafe { device.free_command_buffers(command_pool, &command_buffers) };
     }
 
-    fn execute_one_time_commands<F: FnOnce(CommandBuffer)>(
+    fn execute_one_time_commands<T: FnOnce(CommandBuffer)>(
         device: &Device,
         command_pool: CommandPool,
         queue: Queue,
-        executor: F) {
+        executor: T,
+    ) {
+        let command_buffer = {
+            let alloc_info = CommandBufferAllocateInfo::builder()
+                .level(CommandBufferLevel::PRIMARY)
+                .command_pool(command_pool)
+                .command_buffer_count(1)
+                .build();
 
-        todo!("Implement one time commands!");
+            unsafe { device.allocate_command_buffers(&alloc_info).unwrap()[0] }
+        };
+
+        let command_buffers = [command_buffer];
+
+        // Begin recording
+        {
+            let begin_info = CommandBufferBeginInfo::builder()
+                .flags(CommandBufferUsageFlags::ONE_TIME_SUBMIT)
+                .build();
+
+            unsafe {
+                device
+                    .begin_command_buffer(command_buffer, &begin_info)
+                    .unwrap();
+            }
+        }
+
+        // Execute command (pretty much a delegate)
+        executor(command_buffer);
+
+        unsafe { device.end_command_buffer(command_buffer).unwrap() };
+
+        {
+            let submit_info = SubmitInfo::builder()
+                .command_buffers(&command_buffers)
+                .build();
+
+            let submit_infos = [submit_info];
+
+            unsafe {
+                device
+                    .queue_submit(queue, &submit_infos, Fence::null())
+                    .unwrap();
+                device.queue_wait_idle(queue).unwrap();
+            }
+        }
+
+        unsafe { device.free_command_buffers(command_pool, &command_buffers) };
     }
 
     /// Creates a buffer and allocates the memory required.
