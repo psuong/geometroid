@@ -5,22 +5,22 @@ use crate::engine::shader_utils::read_shader_from_file;
 use ash::util::Align;
 use ash::vk::{
     AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp,
-    BlendFactor, BlendOp, Buffer, BufferCopy, BufferCreateInfo, BufferUsageFlags, ClearColorValue,
-    ClearValue, ColorComponentFlags, CommandBuffer, CommandBufferAllocateInfo,
+    BlendFactor, BlendOp, Buffer, BufferCopy, BufferCreateInfo, BufferImageCopy, BufferUsageFlags,
+    ClearColorValue, ClearValue, ColorComponentFlags, CommandBuffer, CommandBufferAllocateInfo,
     CommandBufferBeginInfo, CommandBufferLevel, CommandBufferUsageFlags, CommandPool,
-    CommandPoolCreateFlags, CommandPoolCreateInfo, DescriptorPool, DescriptorPoolCreateInfo,
-    DescriptorPoolSize, DescriptorSet, DescriptorSetAllocateInfo, DescriptorSetLayout,
-    DescriptorSetLayoutCreateInfo, DescriptorType, DeviceMemory, DeviceSize, Extent3D, Fence,
-    FenceCreateFlags, FenceCreateInfo, Format, Framebuffer, FramebufferCreateInfo, FrontFace,
-    GraphicsPipelineCreateInfo, ImageCreateFlags, ImageCreateInfo, ImageLayout, ImageTiling,
-    ImageType, IndexType, InstanceCreateInfo, LogicOp, MemoryAllocateInfo, MemoryMapFlags,
-    MemoryPropertyFlags, MemoryRequirements, PhysicalDeviceMemoryProperties, Pipeline,
-    PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState,
-    PipelineColorBlendStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo,
-    PipelineMultisampleStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags,
-    RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags, SemaphoreCreateInfo,
-    ShaderStageFlags, SubmitInfo, SubpassContents, SubpassDependency, SubpassDescription,
-    SUBPASS_EXTERNAL, ImageMemoryBarrier, QUEUE_FAMILY_IGNORED, DependencyFlags, BufferImageCopy, ImageSubresourceLayers,
+    CommandPoolCreateFlags, CommandPoolCreateInfo, DependencyFlags, DescriptorPool,
+    DescriptorPoolCreateInfo, DescriptorPoolSize, DescriptorSet, DescriptorSetAllocateInfo,
+    DescriptorSetLayout, DescriptorSetLayoutCreateInfo, DescriptorType, DeviceMemory, DeviceSize,
+    Extent3D, Fence, FenceCreateFlags, FenceCreateInfo, Format, Framebuffer, FramebufferCreateInfo,
+    FrontFace, GraphicsPipelineCreateInfo, ImageCreateFlags, ImageCreateInfo, ImageLayout,
+    ImageMemoryBarrier, ImageSubresourceLayers, ImageTiling, ImageType, IndexType,
+    InstanceCreateInfo, LogicOp, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags,
+    MemoryRequirements, PhysicalDeviceMemoryProperties, Pipeline, PipelineBindPoint, PipelineCache,
+    PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineLayout,
+    PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo, PipelineShaderStageCreateInfo,
+    PipelineStageFlags, RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags,
+    SemaphoreCreateInfo, ShaderStageFlags, SubmitInfo, SubpassContents, SubpassDependency,
+    SubpassDescription, QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL, Offset3D,
 };
 use ash::{
     extensions::{
@@ -166,12 +166,12 @@ impl Engine {
             CommandPoolCreateFlags::empty(),
         );
 
-        let (texture_image, texture_image_memory) =
-            Self::create_texture_image(
-                vk_context.device_ref(), 
-                memory_properties, 
-                command_pool,
-                graphics_queue);
+        let (texture_image, texture_image_memory) = Self::create_texture_image(
+            vk_context.device_ref(),
+            memory_properties,
+            command_pool,
+            graphics_queue,
+        );
 
         let (vertex_buffer, vertex_buffer_memory) = Self::create_vertex_buffer(
             vk_context.device_ref(),
@@ -1116,7 +1116,7 @@ impl Engine {
             device.unmap_memory(memory);
         }
 
-        // Instead of storing the pixels into a buffer and accessing the buffer, create a 
+        // Instead of storing the pixels into a buffer and accessing the buffer, create a
         // vulkan image object which can access pixel data via texels.
         let (image, image_memory) = Self::create_image(
             device,
@@ -1133,24 +1133,33 @@ impl Engine {
         // again to be readable from the fragment shader for texture sampling.
         {
             Self::transition_image_layout(
+                device,
+                command_pool,
+                copy_queue,
+                image,
+                Format::R8G8B8A8_UNORM,
+                ImageLayout::UNDEFINED,
+                ImageLayout::TRANSFER_DST_OPTIMAL,
+            );
+
+            Self::copy_buffer_to_image(
                 device, 
                 command_pool, 
                 copy_queue, 
+                buffer, 
                 image, 
-                Format::R8G8B8A8_UNORM, 
-                ImageLayout::UNDEFINED,
-                ImageLayout::TRANSFER_DST_OPTIMAL);
-
-            todo!("Implement copy_buffer_to_image");
+                image_width, 
+                image_height);
 
             Self::transition_image_layout(
-                device, 
-                command_pool, 
-                copy_queue, 
+                device,
+                command_pool,
+                copy_queue,
                 image,
-                Format::R8G8B8A8_UNORM, 
-                ImageLayout::TRANSFER_DST_OPTIMAL, 
-                ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+                Format::R8G8B8A8_UNORM,
+                ImageLayout::TRANSFER_DST_OPTIMAL,
+                ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            );
         }
 
         unsafe {
@@ -1177,7 +1186,7 @@ impl Engine {
     ) -> (Image, DeviceMemory) {
         let image_info = ImageCreateInfo::builder()
             // By declaring the image type as 2D, we access coordinates via x & y
-            .image_type(ImageType::TYPE_2D) 
+            .image_type(ImageType::TYPE_2D)
             .extent(Extent3D {
                 width,
                 height,
@@ -1251,7 +1260,7 @@ impl Engine {
                         old_layout, new_layout
                     ),
                 };
-            
+
             let barrier = ImageMemoryBarrier::builder()
                 .old_layout(old_layout)
                 .new_layout(new_layout)
@@ -1269,31 +1278,33 @@ impl Engine {
                 .dst_access_mask(dst_access_mask)
                 .build();
 
-                let barriers = [barrier];
-                unsafe {
-                    device.cmd_pipeline_barrier(
-                        buffer, 
-                        src_stage, 
-                        dst_stage, 
-                        DependencyFlags::empty(), 
-                        &[], 
-                        &[], 
-                        &barriers);
-                }
+            let barriers = [barrier];
+            unsafe {
+                device.cmd_pipeline_barrier(
+                    buffer,
+                    src_stage,
+                    dst_stage,
+                    DependencyFlags::empty(),
+                    &[],
+                    &[],
+                    &barriers,
+                );
+            }
         });
     }
 
     fn copy_buffer_to_image(
-        device: &Device, 
-        command_pool: CommandPool, 
+        device: &Device,
+        command_pool: CommandPool,
         transition_queue: Queue,
-        buffer: Buffer, 
+        buffer: Buffer,
         image: Image,
         width: u32,
-        height: u32) {
+        height: u32,
+    ) {
         Self::execute_one_time_commands(device, command_pool, transition_queue, |command_buffer| {
             let region = BufferImageCopy::builder()
-                .buffer_offset(0)
+                .buffer_offset(0) // Where does the pixel data actually start?
                 .buffer_row_length(0)
                 .buffer_image_height(0)
                 .image_subresource(ImageSubresourceLayers {
@@ -1302,14 +1313,24 @@ impl Engine {
                     base_array_layer: 0,
                     layer_count: 1,
                 })
-            .image_offset(Offset3D { x: 0, y: 0, z: 0 })
-            .image_extent(Extent3D { 
-                width, 
-                height, 
-                depth: 1 })
-            .build();
+                .image_offset(Offset3D { x: 0, y: 0, z: 0 })
+                .image_extent(Extent3D {
+                    width,
+                    height,
+                    depth: 1,
+                })
+                .build();
 
-            todo!("Finish the rest of the function!");
+            let regions = [region];
+            unsafe {
+                device.cmd_copy_buffer_to_image(
+                    command_buffer,
+                    buffer,
+                    image,
+                    ImageLayout::TRANSFER_DST_OPTIMAL,
+                    &regions,
+                );
+            }
         });
     }
 
@@ -1438,7 +1459,7 @@ impl Engine {
             let region = BufferCopy {
                 src_offset: 0,
                 dst_offset: 0,
-                size
+                size,
             };
             let regions = [region];
 
@@ -1502,7 +1523,7 @@ impl Engine {
         */
     }
 
-    /// A one time executor that takes in a lambda to execute. This can be used in multiple 
+    /// A one time executor that takes in a lambda to execute. This can be used in multiple
     /// places such as copying a buffer.
     fn execute_one_time_commands<T: FnOnce(CommandBuffer)>(
         device: &Device,
