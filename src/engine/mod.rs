@@ -20,7 +20,7 @@ use ash::vk::{
     PipelineMultisampleStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags,
     RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags, SemaphoreCreateInfo,
     ShaderStageFlags, SubmitInfo, SubpassContents, SubpassDependency, SubpassDescription,
-    SUBPASS_EXTERNAL, ImageMemoryBarrier, QUEUE_FAMILY_IGNORED, ImageSubresource, DependencyFlags,
+    SUBPASS_EXTERNAL, ImageMemoryBarrier, QUEUE_FAMILY_IGNORED, DependencyFlags, BufferImageCopy, ImageSubresourceLayers,
 };
 use ash::{
     extensions::{
@@ -167,7 +167,11 @@ impl Engine {
         );
 
         let (texture_image, texture_image_memory) =
-            Self::create_texture_image(vk_context.device_ref(), memory_properties);
+            Self::create_texture_image(
+                vk_context.device_ref(), 
+                memory_properties, 
+                command_pool,
+                graphics_queue);
 
         let (vertex_buffer, vertex_buffer_memory) = Self::create_vertex_buffer(
             vk_context.device_ref(),
@@ -1128,9 +1132,25 @@ impl Engine {
         // Transition the image layout and copy the buffer into the image. Transation the layout
         // again to be readable from the fragment shader for texture sampling.
         {
-            todo!("Implement transition_image_layout");
+            Self::transition_image_layout(
+                device, 
+                command_pool, 
+                copy_queue, 
+                image, 
+                Format::R8G8B8A8_UNORM, 
+                ImageLayout::UNDEFINED,
+                ImageLayout::TRANSFER_DST_OPTIMAL);
+
             todo!("Implement copy_buffer_to_image");
-            todo!("Implement transition_image_layout");
+
+            Self::transition_image_layout(
+                device, 
+                command_pool, 
+                copy_queue, 
+                image,
+                Format::R8G8B8A8_UNORM, 
+                ImageLayout::TRANSFER_DST_OPTIMAL, 
+                ImageLayout::SHADER_READ_ONLY_OPTIMAL);
         }
 
         unsafe {
@@ -1263,6 +1283,36 @@ impl Engine {
         });
     }
 
+    fn copy_buffer_to_image(
+        device: &Device, 
+        command_pool: CommandPool, 
+        transition_queue: Queue,
+        buffer: Buffer, 
+        image: Image,
+        width: u32,
+        height: u32) {
+        Self::execute_one_time_commands(device, command_pool, transition_queue, |command_buffer| {
+            let region = BufferImageCopy::builder()
+                .buffer_offset(0)
+                .buffer_row_length(0)
+                .buffer_image_height(0)
+                .image_subresource(ImageSubresourceLayers {
+                    aspect_mask: ImageAspectFlags::COLOR,
+                    mip_level: 0,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                })
+            .image_offset(Offset3D { x: 0, y: 0, z: 0 })
+            .image_extent(Extent3D { 
+                width, 
+                height, 
+                depth: 1 })
+            .build();
+
+            todo!("Finish the rest of the function!");
+        });
+    }
+
     fn create_vertex_buffer(
         device: &Device,
         mem_properties: PhysicalDeviceMemoryProperties,
@@ -1384,6 +1434,17 @@ impl Engine {
         dst: Buffer,
         size: DeviceSize,
     ) {
+        Self::execute_one_time_commands(&device, command_pool, transfer_queue, |buffer| {
+            let region = BufferCopy {
+                src_offset: 0,
+                dst_offset: 0,
+                size
+            };
+            let regions = [region];
+
+            unsafe { device.cmd_copy_buffer(buffer, src, dst, &regions) };
+        });
+        /*
         let command_buffer = {
             let alloc_info = CommandBufferAllocateInfo::builder()
                 .level(CommandBufferLevel::PRIMARY)
@@ -1438,8 +1499,11 @@ impl Engine {
 
         // Free
         unsafe { device.free_command_buffers(command_pool, &command_buffers) };
+        */
     }
 
+    /// A one time executor that takes in a lambda to execute. This can be used in multiple 
+    /// places such as copying a buffer.
     fn execute_one_time_commands<T: FnOnce(CommandBuffer)>(
         device: &Device,
         command_pool: CommandPool,
