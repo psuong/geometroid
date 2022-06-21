@@ -15,13 +15,14 @@ use ash::vk::{
     FrontFace, GraphicsPipelineCreateInfo, ImageCreateFlags, ImageCreateInfo, ImageLayout,
     ImageMemoryBarrier, ImageSubresourceLayers, ImageTiling, ImageType, IndexType,
     InstanceCreateInfo, LogicOp, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags,
-    MemoryRequirements, PhysicalDeviceMemoryProperties, Pipeline, PipelineBindPoint, PipelineCache,
-    PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo, PipelineLayout,
-    PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo, PipelineShaderStageCreateInfo,
-    PipelineStageFlags, RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags,
-    SemaphoreCreateInfo, ShaderStageFlags, SubmitInfo, SubpassContents, SubpassDependency,
-    SubpassDescription, QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL, Offset3D,
+    MemoryRequirements, Offset3D, PhysicalDeviceMemoryProperties, Pipeline, PipelineBindPoint,
+    PipelineCache, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo,
+    PipelineLayout, PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo,
+    PipelineShaderStageCreateInfo, PipelineStageFlags, RenderPass, RenderPassBeginInfo,
+    RenderPassCreateInfo, SampleCountFlags, SemaphoreCreateInfo, ShaderStageFlags, SubmitInfo,
+    SubpassContents, SubpassDependency, SubpassDescription, QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL,
 };
+
 use ash::{
     extensions::{
         ext::DebugUtils,
@@ -368,9 +369,9 @@ impl Engine {
         false
     }
 
-    /// Cleans up the swapchain by destroying the framebuffers, freeing the command buffers,
-    /// destroying the pipeline, pipeline layout, renderpass, swapchain image views, and
-    /// finally swapchain.
+    /// Cleans up the swapchain by destroying the framebuffers, freeing the command
+    /// buffers, destroying the pipeline, pipeline layout, renderpass, swapchain image
+    /// views, and finally swapchain.
     fn cleanup_swapchain(&mut self) {
         let device = self.vk_context.device_ref();
         unsafe {
@@ -750,7 +751,7 @@ impl Engine {
             present_mode,
             extent,
             image_count
-        );
+            );
 
         let graphics = queue_families_indices.graphics_index;
         let present = queue_families_indices.present_index;
@@ -1089,7 +1090,7 @@ impl Engine {
         copy_queue: Queue,
     ) -> (Image, DeviceMemory) {
         let image = image::open("assets/images/statue.jpg").unwrap();
-        let image_as_rgb = image.to_rgb8();
+        let image_as_rgb = image.to_rgba8();
 
         let image_width = (&image_as_rgb).width();
         let image_height = (&image_as_rgb).height();
@@ -1143,13 +1144,14 @@ impl Engine {
             );
 
             Self::copy_buffer_to_image(
-                device, 
-                command_pool, 
-                copy_queue, 
-                buffer, 
-                image, 
-                image_width, 
-                image_height);
+                device,
+                command_pool,
+                copy_queue,
+                buffer,
+                image,
+                image_width,
+                image_height,
+            );
 
             Self::transition_image_layout(
                 device,
@@ -1466,56 +1468,56 @@ impl Engine {
             unsafe { device.cmd_copy_buffer(buffer, src, dst, &regions) };
         });
         /*
-        let command_buffer = {
-            let alloc_info = CommandBufferAllocateInfo::builder()
-                .level(CommandBufferLevel::PRIMARY)
-                .command_pool(command_pool)
-                .command_buffer_count(1)
-                .build();
+           let command_buffer = {
+           let alloc_info = CommandBufferAllocateInfo::builder()
+           .level(CommandBufferLevel::PRIMARY)
+           .command_pool(command_pool)
+           .command_buffer_count(1)
+           .build();
 
-            unsafe { device.allocate_command_buffers(&alloc_info).unwrap()[0] }
+           unsafe { device.allocate_command_buffers(&alloc_info).unwrap()[0] }
+           };
+
+           let command_buffers = [command_buffer];
+           {
+        // Begin the recording
+        let begin_info = CommandBufferBeginInfo::builder()
+        .flags(CommandBufferUsageFlags::ONE_TIME_SUBMIT)
+        .build();
+
+        unsafe {
+        device
+        .begin_command_buffer(command_buffer, &begin_info)
+        .unwrap();
         };
-
-        let command_buffers = [command_buffer];
-        {
-            // Begin the recording
-            let begin_info = CommandBufferBeginInfo::builder()
-                .flags(CommandBufferUsageFlags::ONE_TIME_SUBMIT)
-                .build();
-
-            unsafe {
-                device
-                    .begin_command_buffer(command_buffer, &begin_info)
-                    .unwrap();
-            };
         }
         {
-            // Copy
-            let region = BufferCopy {
-                src_offset: 0,
-                dst_offset: 0,
-                size,
-            };
-            let regions = [region];
-            unsafe {
-                device.cmd_copy_buffer(command_buffer, src, dst, &regions);
-            }
+        // Copy
+        let region = BufferCopy {
+        src_offset: 0,
+        dst_offset: 0,
+        size,
+        };
+        let regions = [region];
+        unsafe {
+        device.cmd_copy_buffer(command_buffer, src, dst, &regions);
+        }
         }
         // End the recording
         unsafe { device.end_command_buffer(command_buffer).unwrap() };
         // Submit and wait
         {
-            let submit_info = SubmitInfo::builder()
-                .command_buffers(&command_buffers)
-                .build();
+        let submit_info = SubmitInfo::builder()
+        .command_buffers(&command_buffers)
+        .build();
 
-            let submit_infos = [submit_info];
-            unsafe {
-                device
-                    .queue_submit(transfer_queue, &submit_infos, Fence::null())
-                    .unwrap();
-                device.queue_wait_idle(transfer_queue).unwrap();
-            }
+        let submit_infos = [submit_info];
+        unsafe {
+        device
+        .queue_submit(transfer_queue, &submit_infos, Fence::null())
+        .unwrap();
+        device.queue_wait_idle(transfer_queue).unwrap();
+        }
         }
 
         // Free

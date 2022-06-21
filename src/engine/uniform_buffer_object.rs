@@ -1,7 +1,7 @@
 use ash::vk::{DescriptorSetLayoutBinding, DescriptorType, ShaderStageFlags};
 use glam::Mat4;
 
-/// A descriptor layout specifies the types of resources that will be accessed. We need the 
+/// A descriptor layout specifies the types of resources that will be accessed. We need the
 /// model view projection matrix.
 #[derive(Clone, Copy)]
 #[allow(dead_code)]
@@ -24,4 +24,3 @@ impl UniformBufferObject {
         [ubo_layout_binding]
     }
 }
-

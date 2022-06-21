@@ -1,9 +1,10 @@
 use ash::{
     extensions::khr::{Surface, Win32Surface},
     vk::{
-        ColorSpaceKHR, Extent2D, Format, PhysicalDevice, PresentModeKHR, SurfaceCapabilitiesKHR,
-        SurfaceFormatKHR, SurfaceKHR, self, 
-    }, Device,
+        self, ColorSpaceKHR, Extent2D, Format, PhysicalDevice, PresentModeKHR,
+        SurfaceCapabilitiesKHR, SurfaceFormatKHR, SurfaceKHR,
+    },
+    Device,
 };
 
 /// Get required extensions on Windows.
@@ -21,7 +22,7 @@ pub struct QueueFamiliesIndices {
 pub struct SyncObjects {
     pub image_available_semaphore: vk::Semaphore,
     pub render_finished_semaphore: vk::Semaphore,
-    pub fence: vk::Fence
+    pub fence: vk::Fence,
 }
 
 impl SyncObjects {
@@ -36,19 +37,21 @@ impl SyncObjects {
 
 pub struct InFlightFrames {
     sync_objects: Vec<SyncObjects>,
-    current_frame: usize
+    current_frame: usize,
 }
 
 impl InFlightFrames {
     pub fn new(sync_objects: Vec<SyncObjects>) -> Self {
         Self {
             sync_objects,
-            current_frame: 0
+            current_frame: 0,
         }
     }
 
     pub fn destroy(&self, device: &Device) {
-        self.sync_objects.iter().for_each(|sync| sync.destroy(&device));
+        self.sync_objects
+            .iter()
+            .for_each(|sync| sync.destroy(&device));
     }
 }
 

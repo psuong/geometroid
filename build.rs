@@ -1,19 +1,22 @@
 // build.rs
-use std::{ffi::OsStr, fs::{File, read_dir}, io::{Result, Write}, path::PathBuf, process::{Command, Output}};
+use std::{
+    ffi::OsStr,
+    fs::{read_dir, File},
+    io::{Result, Write},
+    path::PathBuf,
+    process::{Command, Output},
+};
 
 struct Source {
     root: PathBuf,
-    shader_log: PathBuf
+    shader_log: PathBuf,
 }
 
 impl Source {
     pub fn new() -> Self {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let shader_log = root.clone().join("shader.log");
-        Source {
-            root,
-            shader_log
-        }
+        Source { root, shader_log }
     }
 
     pub fn shader_src(&self) -> PathBuf {
@@ -26,7 +29,7 @@ fn main() {
     let source = Source::new();
     let shader_dir_path = source.shader_src();
 
-    let mut log_messages : Vec<String> = Vec::new();
+    let mut log_messages: Vec<String> = Vec::new();
 
     println!("Shader directory: {:?}", shader_dir_path);
 
@@ -55,23 +58,36 @@ fn main() {
         });
 
     match write_messages_to_file(source.shader_log.clone(), &log_messages) {
-        _ => {},
+        _ => {}
     };
 }
 
-fn handle_shader_result(path_buffer: PathBuf, result: Result<Output>, log_messages: &mut Vec<String>) {
+fn handle_shader_result(
+    path_buffer: PathBuf,
+    result: Result<Output>,
+    log_messages: &mut Vec<String>,
+) {
     match result {
         Ok(output) => {
             if output.status.success() {
                 log_messages.push("Shader compilation succeeded".to_string());
-                log_messages.push(String::from_utf8(output.stdout)
-                    .unwrap_or("Failed to print program to stdout".to_string()));
+                log_messages.push(
+                    String::from_utf8(output.stdout)
+                        .unwrap_or("Failed to print program to stdout".to_string()),
+                );
             } else {
-                log_messages.push(format!("Shader compilation failed. Status: {}", output.status));
-                log_messages.push(String::from_utf8(output.stdout)
-                    .unwrap_or("Failed to print program stdout".to_string()));
-                log_messages.push(String::from_utf8(output.stderr)
-                    .unwrap_or("Failed to print program stderr".to_string()));
+                log_messages.push(format!(
+                    "Shader compilation failed. Status: {}",
+                    output.status
+                ));
+                log_messages.push(
+                    String::from_utf8(output.stdout)
+                        .unwrap_or("Failed to print program stdout".to_string()),
+                );
+                log_messages.push(
+                    String::from_utf8(output.stderr)
+                        .unwrap_or("Failed to print program stderr".to_string()),
+                );
             }
         }
         Err(error) => {
