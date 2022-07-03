@@ -5,22 +5,24 @@ use crate::engine::shader_utils::read_shader_from_file;
 use ash::util::Align;
 use ash::vk::{
     AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp,
-    BlendFactor, BlendOp, Buffer, BufferCopy, BufferCreateInfo, BufferImageCopy, BufferUsageFlags,
-    ClearColorValue, ClearValue, ColorComponentFlags, CommandBuffer, CommandBufferAllocateInfo,
-    CommandBufferBeginInfo, CommandBufferLevel, CommandBufferUsageFlags, CommandPool,
-    CommandPoolCreateFlags, CommandPoolCreateInfo, DependencyFlags, DescriptorPool,
-    DescriptorPoolCreateInfo, DescriptorPoolSize, DescriptorSet, DescriptorSetAllocateInfo,
-    DescriptorSetLayout, DescriptorSetLayoutCreateInfo, DescriptorType, DeviceMemory, DeviceSize,
-    Extent3D, Fence, FenceCreateFlags, FenceCreateInfo, Format, Framebuffer, FramebufferCreateInfo,
-    FrontFace, GraphicsPipelineCreateInfo, ImageCreateFlags, ImageCreateInfo, ImageLayout,
-    ImageMemoryBarrier, ImageSubresourceLayers, ImageTiling, ImageType, IndexType,
-    InstanceCreateInfo, LogicOp, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags,
-    MemoryRequirements, Offset3D, PhysicalDeviceMemoryProperties, Pipeline, PipelineBindPoint,
-    PipelineCache, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo,
-    PipelineLayout, PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo,
-    PipelineShaderStageCreateInfo, PipelineStageFlags, RenderPass, RenderPassBeginInfo,
-    RenderPassCreateInfo, SampleCountFlags, SemaphoreCreateInfo, ShaderStageFlags, SubmitInfo,
-    SubpassContents, SubpassDependency, SubpassDescription, QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL,
+    BlendFactor, BlendOp, BorderColor, Buffer, BufferCopy, BufferCreateInfo, BufferImageCopy,
+    BufferUsageFlags, ClearColorValue, ClearValue, ColorComponentFlags, CommandBuffer,
+    CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel, CommandBufferUsageFlags,
+    CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo, CompareOp, DependencyFlags,
+    DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize, DescriptorSet,
+    DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutCreateInfo, DescriptorType,
+    DeviceMemory, DeviceSize, Extent3D, Fence, FenceCreateFlags, FenceCreateInfo, Filter, Format,
+    Framebuffer, FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo, ImageCreateFlags,
+    ImageCreateInfo, ImageLayout, ImageMemoryBarrier, ImageSubresourceLayers, ImageTiling,
+    ImageType, IndexType, InstanceCreateInfo, LogicOp, MemoryAllocateInfo, MemoryMapFlags,
+    MemoryPropertyFlags, MemoryRequirements, Offset3D, PhysicalDeviceMemoryProperties, Pipeline,
+    PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState,
+    PipelineColorBlendStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo,
+    PipelineMultisampleStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags,
+    RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags, Sampler,
+    SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode, SemaphoreCreateInfo,
+    ShaderStageFlags, SubmitInfo, SubpassContents, SubpassDependency, SubpassDescription,
+    QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL,
 };
 
 use ash::{
@@ -825,6 +827,25 @@ impl Engine {
             .collect::<Vec<_>>()
     }
 
+    /// An abstraction of the internals of create_swapchain_image_views. All images are accessed
+    /// view VkImageView.
+    fn create_image_view(device: &Device, image: Image, format: Format) -> ImageView {
+        let create_info = ImageViewCreateInfo::builder()
+            .image(image)
+            .view_type(ImageViewType::TYPE_2D)
+            .format(format)
+            .subresource_range(ImageSubresourceRange {
+                aspect_mask: ImageAspectFlags::COLOR,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1,
+            })
+            .build();
+
+        unsafe { device.create_image_view(&create_info, None).unwrap() }
+    }
+
     /// The descriptor_set_layout lets vulkan know the layout of the uniform buffers so that
     /// the shader has enough information.
     ///
@@ -1334,6 +1355,31 @@ impl Engine {
                 );
             }
         });
+    }
+
+    fn create_texture_image_view(device: &Device, image: Image) -> ImageView {
+        Self::create_image_view(device, image, Format::R8G8B8A8_UNORM)
+    }
+
+    fn create_texture_sampler(device: &Device) -> Sampler {
+        let sampler_info = SamplerCreateInfo::builder()
+            .mag_filter(Filter::LINEAR)
+            .min_filter(Filter::LINEAR)
+            .address_mode_u(SamplerAddressMode::REPEAT)
+            .address_mode_v(SamplerAddressMode::REPEAT)
+            .address_mode_w(SamplerAddressMode::REPEAT)
+            .anisotropy_enable(true)
+            .max_anisotropy(16.0)
+            .border_color(BorderColor::INT_OPAQUE_BLACK)
+            .unnormalized_coordinates(false)
+            .compare_enable(false)
+            .compare_op(CompareOp::ALWAYS)
+            .mipmap_mode(SamplerMipmapMode::LINEAR)
+            .min_lod(0.0)
+            .max_lod(0.0)
+            .build();
+
+        unsafe { device.create_sampler(&sampler_info, None).unwrap() }
     }
 
     fn create_vertex_buffer(
