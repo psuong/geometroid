@@ -9,19 +9,23 @@ use memoffset::offset_of;
 pub const VERTICES: [Vertex; 4] = [
     Vertex {
         position: const_vec2!([-0.5, -0.5]),
-        color: const_vec3!([1.0, 0.0, 0.0]),
+        color: const_vec3!([1.0, 1.0, 1.0]),
+        coordinates: const_vec2!([0.0, 0.0])
     },
     Vertex {
         position: const_vec2!([-0.5, 0.5]),
-        color: const_vec3!([0.0, 1.0, 0.0]),
+        color: const_vec3!([1.0, 1.0, 1.0]),
+        coordinates: const_vec2!([1.0, 0.0])
     },
     Vertex {
         position: const_vec2!([0.5, 0.5]),
-        color: const_vec3!([0.0, 0.0, 1.0]),
+        color: const_vec3!([1.0, 1.0, 1.0]),
+        coordinates: const_vec2!([1.0, 1.0])
     },
     Vertex {
         position: const_vec2!([0.5, -0.5]),
         color: const_vec3!([1.0, 1.0, 1.0]),
+        coordinates: const_vec2!([1.0, 1.0])
     },
 ];
 
@@ -31,6 +35,7 @@ pub const INDICES: [u16; 6] = [0, 1, 2, 0, 2, 3];
 pub struct Vertex {
     pub position: Vec2,
     pub color: Vec3,
+    pub coordinates: Vec2,
 }
 
 impl Vertex {
