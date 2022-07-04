@@ -1,4 +1,8 @@
-use ash::vk::{self, VertexInputAttributeDescription};
+use std::mem;
+
+use ash::vk::{
+    Format, VertexInputAttributeDescription, VertexInputBindingDescription, VertexInputRate,
+};
 use glam::{const_vec2, const_vec3, Vec2, Vec3};
 use memoffset::offset_of;
 
@@ -34,11 +38,11 @@ impl Vertex {
     /// throughout the vertices. It specifies the number of bytes between
     /// data entries and whether to move to the next data entry after each
     /// vertex or after each instance.
-    pub fn get_binding_description() -> vk::VertexInputBindingDescription {
-        vk::VertexInputBindingDescription::builder()
+    pub fn get_binding_description() -> VertexInputBindingDescription {
+        VertexInputBindingDescription::builder()
             .binding(0)
-            .stride(std::mem::size_of::<Vertex>() as u32)
-            .input_rate(vk::VertexInputRate::VERTEX)
+            .stride(mem::size_of::<Vertex>() as u32)
+            .input_rate(VertexInputRate::VERTEX)
             .build()
     }
 
@@ -50,14 +54,14 @@ impl Vertex {
         let position_desc = VertexInputAttributeDescription::builder()
             .binding(0)
             .location(0)
-            .format(vk::Format::R32G32_SFLOAT)
+            .format(Format::R32G32_SFLOAT)
             .offset(offset_of!(Vertex, position) as u32)
             .build();
 
         let color_desc = VertexInputAttributeDescription::builder()
             .binding(0)
             .location(1)
-            .format(vk::Format::R32G32B32_SFLOAT)
+            .format(Format::R32G32B32_SFLOAT)
             .offset(offset_of!(Vertex, color) as u32)
             .build();
 

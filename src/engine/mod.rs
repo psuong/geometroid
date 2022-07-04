@@ -1,6 +1,5 @@
 pub(crate) use crate::common::MAX_FRAMES_IN_FLIGHT;
-use crate::engine::render::Vertex;
-use crate::engine::shader_utils::read_shader_from_file;
+use crate::engine::{render::Vertex, shader_utils::read_shader_from_file};
 
 use ash::{
     extensions::{
@@ -15,36 +14,37 @@ use ash::{
         CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel,
         CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo,
         CompareOp, ComponentMapping, ComponentSwizzle, CompositeAlphaFlagsKHR, CullModeFlags,
-        DependencyFlags, DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize,
-        DescriptorSet, DescriptorSetAllocateInfo, DescriptorSetLayout,
-        DescriptorSetLayoutCreateInfo, DescriptorType, DeviceCreateInfo, DeviceMemory,
-        DeviceQueueCreateInfo, DeviceSize, Extent3D, Fence, FenceCreateFlags, FenceCreateInfo,
-        Filter, Format, Framebuffer, FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo,
-        Image, ImageAspectFlags, ImageCreateFlags, ImageCreateInfo, ImageLayout,
-        ImageMemoryBarrier, ImageSubresourceLayers, ImageSubresourceRange, ImageTiling, ImageType,
-        ImageUsageFlags, ImageView, ImageViewCreateInfo, ImageViewType, IndexType,
-        InstanceCreateInfo, LogicOp, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags,
-        MemoryRequirements, Offset2D, Offset3D, PhysicalDevice, PhysicalDeviceFeatures,
-        PhysicalDeviceMemoryProperties, Pipeline, PipelineBindPoint, PipelineCache,
-        PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo,
-        PipelineInputAssemblyStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo,
-        PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo,
-        PipelineShaderStageCreateInfo, PipelineStageFlags, PipelineVertexInputStateCreateInfo,
-        PipelineViewportStateCreateInfo, PolygonMode, PrimitiveTopology, Queue, QueueFlags, Rect2D,
-        RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags, Sampler,
-        SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode, SemaphoreCreateInfo,
-        ShaderStageFlags, SharingMode, SubmitInfo, SubpassContents, SubpassDependency,
-        SubpassDescription, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR, Viewport,
-        QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL, TRUE,
+        DependencyFlags, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateInfo,
+        DescriptorPoolSize, DescriptorSet, DescriptorSetAllocateInfo, DescriptorSetLayout,
+        DescriptorSetLayoutBinding, DescriptorSetLayoutCreateInfo, DescriptorType,
+        DeviceCreateInfo, DeviceMemory, DeviceQueueCreateInfo, DeviceSize, Extent3D, Fence,
+        FenceCreateFlags, FenceCreateInfo, Filter, Format, Framebuffer, FramebufferCreateInfo,
+        FrontFace, GraphicsPipelineCreateInfo, Image, ImageAspectFlags, ImageCreateFlags,
+        ImageCreateInfo, ImageLayout, ImageMemoryBarrier, ImageSubresourceLayers,
+        ImageSubresourceRange, ImageTiling, ImageType, ImageUsageFlags, ImageView,
+        ImageViewCreateInfo, ImageViewType, IndexType, InstanceCreateInfo, LogicOp,
+        MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements, Offset2D,
+        Offset3D, PhysicalDevice, PhysicalDeviceFeatures, PhysicalDeviceMemoryProperties, Pipeline,
+        PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState,
+        PipelineColorBlendStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineLayout,
+        PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo,
+        PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags,
+        PipelineVertexInputStateCreateInfo, PipelineViewportStateCreateInfo, PolygonMode,
+        PrimitiveTopology, Queue, QueueFlags, Rect2D, RenderPass, RenderPassBeginInfo,
+        RenderPassCreateInfo, SampleCountFlags, Sampler, SamplerAddressMode, SamplerCreateInfo,
+        SamplerMipmapMode, SemaphoreCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo,
+        SubpassContents, SubpassDependency, SubpassDescription, SurfaceKHR, SwapchainCreateInfoKHR,
+        SwapchainKHR, Viewport, WriteDescriptorSet, QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL, TRUE,
     },
 };
 
 use ash::{Device, Entry, Instance};
 use glam::{Mat4, Vec3};
-use std::ffi::{CStr, CString};
-use std::mem::{align_of, size_of};
-use std::panic;
-use std::time::Instant;
+use std::{
+    ffi::{CStr, CString},
+    mem::{align_of, size_of},
+};
+use std::{panic, time::Instant};
 use winit::window::Window;
 
 pub mod context;
@@ -205,6 +205,8 @@ impl Engine {
             descriptor_pool,
             descriptor_set_layout,
             &uniform_buffers,
+            texture_image_view,
+            texture_image_sampler,
         );
 
         let command_buffers = Self::create_and_register_command_buffers(
@@ -374,7 +376,6 @@ impl Engine {
                 _ => {}
             }
         }
-
         false
     }
 
@@ -399,12 +400,18 @@ impl Engine {
     }
 
     /// Descriptor set layouts can only be created in a pool like a command buffer.
+    /// The pool size needs to accomodate the image sampler and the uniform buffer.
     fn create_descriptor_pool(device: &Device, size: u32) -> DescriptorPool {
-        let pool_size = DescriptorPoolSize {
+        let ubo_pool_size = DescriptorPoolSize {
             ty: DescriptorType::UNIFORM_BUFFER,
             descriptor_count: size,
         };
-        let pool_sizes = [pool_size];
+        let sampler_pool_size = DescriptorPoolSize {
+            ty: DescriptorType::COMBINED_IMAGE_SAMPLER,
+            descriptor_count: size,
+        };
+
+        let pool_sizes = [ubo_pool_size, sampler_pool_size];
 
         let pool_info = DescriptorPoolCreateInfo::builder()
             .pool_sizes(&pool_sizes)
@@ -432,6 +439,8 @@ impl Engine {
         pool: DescriptorPool,
         layout: DescriptorSetLayout,
         uniform_buffers: &[Buffer],
+        image_view: ImageView,
+        sampler: Sampler,
     ) -> Vec<DescriptorSet> {
         let layouts = (0..uniform_buffers.len())
             .map(|_| layout)
@@ -453,16 +462,32 @@ impl Engine {
                     .build();
                 let buffer_infos = [buffer_info];
 
-                let descriptor_write = vk::WriteDescriptorSet::builder()
+                // Create the descriptor set for the image here
+                let image_info = DescriptorImageInfo::builder()
+                    .image_layout(ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                    .image_view(image_view)
+                    .sampler(sampler)
+                    .build();
+
+                let image_infos = [image_info];
+
+                let ubo_descriptor_write = WriteDescriptorSet::builder()
                     .dst_set(*set)
                     .dst_binding(0)
                     .dst_array_element(0)
-                    .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                    .descriptor_type(DescriptorType::UNIFORM_BUFFER)
                     .buffer_info(&buffer_infos)
-                    // .image_info() null since we're not updating an image
-                    // .texel_buffer_view() .image_info() null since we're not updating a buffer view
                     .build();
-                let descriptor_writes = [descriptor_write];
+
+                let sampler_descriptor_write = WriteDescriptorSet::builder()
+                    .dst_set(*set)
+                    .dst_binding(1)
+                    .dst_array_element(0)
+                    .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(&image_infos)
+                    .build();
+
+                let descriptor_writes = [ubo_descriptor_write, sampler_descriptor_write];
                 let null = [];
 
                 unsafe { device.update_descriptor_sets(&descriptor_writes, &null) }
@@ -893,7 +918,14 @@ impl Engine {
     ///
     /// A common example is binding 2 buffers and an image to the mesh.
     fn create_descriptor_set_layout(device: &Device) -> DescriptorSetLayout {
-        let bindings = UniformBufferObject::get_descriptor_set_layout_bindings();
+        let ubo_binding = UniformBufferObject::get_descriptor_set_layout_binding();
+        let sampler_binding = DescriptorSetLayoutBinding::builder()
+            .binding(1)
+            .descriptor_count(1)
+            .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .stage_flags(ShaderStageFlags::FRAGMENT)
+            .build();
+        let bindings = [ubo_binding, sampler_binding];
         let layout_info = DescriptorSetLayoutCreateInfo::builder()
             .bindings(&bindings)
             .build();
@@ -1555,62 +1587,6 @@ impl Engine {
 
             unsafe { device.cmd_copy_buffer(buffer, src, dst, &regions) };
         });
-        /*
-           let command_buffer = {
-           let alloc_info = CommandBufferAllocateInfo::builder()
-           .level(CommandBufferLevel::PRIMARY)
-           .command_pool(command_pool)
-           .command_buffer_count(1)
-           .build();
-
-           unsafe { device.allocate_command_buffers(&alloc_info).unwrap()[0] }
-           };
-
-           let command_buffers = [command_buffer];
-           {
-        // Begin the recording
-        let begin_info = CommandBufferBeginInfo::builder()
-        .flags(CommandBufferUsageFlags::ONE_TIME_SUBMIT)
-        .build();
-
-        unsafe {
-        device
-        .begin_command_buffer(command_buffer, &begin_info)
-        .unwrap();
-        };
-        }
-        {
-        // Copy
-        let region = BufferCopy {
-        src_offset: 0,
-        dst_offset: 0,
-        size,
-        };
-        let regions = [region];
-        unsafe {
-        device.cmd_copy_buffer(command_buffer, src, dst, &regions);
-        }
-        }
-        // End the recording
-        unsafe { device.end_command_buffer(command_buffer).unwrap() };
-        // Submit and wait
-        {
-        let submit_info = SubmitInfo::builder()
-        .command_buffers(&command_buffers)
-        .build();
-
-        let submit_infos = [submit_info];
-        unsafe {
-        device
-        .queue_submit(transfer_queue, &submit_infos, Fence::null())
-        .unwrap();
-        device.queue_wait_idle(transfer_queue).unwrap();
-        }
-        }
-
-        // Free
-        unsafe { device.free_command_buffers(command_pool, &command_buffers) };
-        */
     }
 
     /// A one time executor that takes in a lambda to execute. This can be used in multiple

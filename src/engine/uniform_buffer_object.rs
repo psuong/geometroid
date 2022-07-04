@@ -12,7 +12,7 @@ pub struct UniformBufferObject {
 }
 
 impl UniformBufferObject {
-    pub fn get_descriptor_set_layout_bindings() -> [DescriptorSetLayoutBinding; 1] {
+    pub fn get_descriptor_set_layout_binding() -> DescriptorSetLayoutBinding {
         let ubo_layout_binding = DescriptorSetLayoutBinding::builder()
             .binding(0)
             .descriptor_type(DescriptorType::UNIFORM_BUFFER)
@@ -21,6 +21,6 @@ impl UniformBufferObject {
             // TODO: Check if we need a sampler descriptor later on
             .build();
 
-        [ubo_layout_binding]
+        ubo_layout_binding
     }
 }
