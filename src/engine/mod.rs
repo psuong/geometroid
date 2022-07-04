@@ -1,46 +1,45 @@
-use crate::common::MAX_FRAMES_IN_FLIGHT;
+pub(crate) use crate::common::MAX_FRAMES_IN_FLIGHT;
 use crate::engine::render::Vertex;
 use crate::engine::shader_utils::read_shader_from_file;
 
 use ash::util::Align;
-use ash::vk::{
-    AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference, AttachmentStoreOp,
-    BlendFactor, BlendOp, BorderColor, Buffer, BufferCopy, BufferCreateInfo, BufferImageCopy,
-    BufferUsageFlags, ClearColorValue, ClearValue, ColorComponentFlags, CommandBuffer,
-    CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel, CommandBufferUsageFlags,
-    CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo, CompareOp, DependencyFlags,
-    DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize, DescriptorSet,
-    DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutCreateInfo, DescriptorType,
-    DeviceMemory, DeviceSize, Extent3D, Fence, FenceCreateFlags, FenceCreateInfo, Filter, Format,
-    Framebuffer, FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo, ImageCreateFlags,
-    ImageCreateInfo, ImageLayout, ImageMemoryBarrier, ImageSubresourceLayers, ImageTiling,
-    ImageType, IndexType, InstanceCreateInfo, LogicOp, MemoryAllocateInfo, MemoryMapFlags,
-    MemoryPropertyFlags, MemoryRequirements, Offset3D, PhysicalDeviceMemoryProperties, Pipeline,
-    PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState,
-    PipelineColorBlendStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo,
-    PipelineMultisampleStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags,
-    RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags, Sampler,
-    SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode, SemaphoreCreateInfo,
-    ShaderStageFlags, SubmitInfo, SubpassContents, SubpassDependency, SubpassDescription,
-    QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL,
-};
-
 use ash::{
     extensions::{
         ext::DebugUtils,
         khr::{Surface, Swapchain},
     },
     vk::{
-        self, ComponentMapping, ComponentSwizzle, CompositeAlphaFlagsKHR, CullModeFlags,
-        DeviceCreateInfo, DeviceQueueCreateInfo, Image, ImageAspectFlags, ImageSubresourceRange,
-        ImageUsageFlags, ImageView, ImageViewCreateInfo, ImageViewType, Offset2D, PhysicalDevice,
-        PhysicalDeviceFeatures, PipelineInputAssemblyStateCreateInfo,
-        PipelineRasterizationStateCreateInfo, PipelineVertexInputStateCreateInfo,
+        self, AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference,
+        AttachmentStoreOp, BlendFactor, BlendOp, BorderColor, Buffer, BufferCopy, BufferCreateInfo,
+        BufferImageCopy, BufferUsageFlags, ClearColorValue, ClearValue, ColorComponentFlags,
+        CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel,
+        CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo,
+        CompareOp, ComponentMapping, ComponentSwizzle, CompositeAlphaFlagsKHR, CullModeFlags,
+        DependencyFlags, DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize,
+        DescriptorSet, DescriptorSetAllocateInfo, DescriptorSetLayout,
+        DescriptorSetLayoutCreateInfo, DescriptorType, DeviceCreateInfo, DeviceMemory,
+        DeviceQueueCreateInfo, DeviceSize, Extent3D, Fence, FenceCreateFlags, FenceCreateInfo,
+        Filter, Format, Framebuffer, FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo,
+        Image, ImageAspectFlags, ImageCreateFlags, ImageCreateInfo, ImageLayout,
+        ImageMemoryBarrier, ImageSubresourceLayers, ImageSubresourceRange, ImageTiling, ImageType,
+        ImageUsageFlags, ImageView, ImageViewCreateInfo, ImageViewType, IndexType,
+        InstanceCreateInfo, LogicOp, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags,
+        MemoryRequirements, Offset2D, Offset3D, PhysicalDevice, PhysicalDeviceFeatures,
+        PhysicalDeviceMemoryProperties, Pipeline, PipelineBindPoint, PipelineCache,
+        PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo,
+        PipelineInputAssemblyStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo,
+        PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo,
+        PipelineShaderStageCreateInfo, PipelineStageFlags, PipelineVertexInputStateCreateInfo,
         PipelineViewportStateCreateInfo, PolygonMode, PrimitiveTopology, Queue, QueueFlags, Rect2D,
-        SharingMode, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR, Viewport,
+        RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags, Sampler,
+        SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode, SemaphoreCreateInfo,
+        ShaderStageFlags, SharingMode, SubmitInfo, SubpassContents, SubpassDependency,
+        SubpassDescription, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR, Viewport,
+        QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL,
     },
-    Device, Entry, Instance,
 };
+
+use ash::{Device, Entry, Instance};
 use glam::{Mat4, Vec3};
 use std::ffi::{CStr, CString};
 use std::mem::{align_of, size_of};
@@ -94,6 +93,8 @@ pub struct Engine {
     transient_command_pool: CommandPool,
     texture_image: Image,
     texture_image_memory: DeviceMemory,
+    texture_image_view: ImageView,
+    texture_image_sampler: Sampler,
     uniform_buffers: Vec<Buffer>,
     uniform_buffer_memories: Vec<DeviceMemory>,
     vertex_buffer: Buffer,
@@ -176,6 +177,10 @@ impl Engine {
             graphics_queue,
         );
 
+        let texture_image_view =
+            Self::create_texture_image_view(vk_context.device_ref(), texture_image);
+        let texture_image_sampler = Self::create_texture_sampler(vk_context.device_ref());
+
         let (vertex_buffer, vertex_buffer_memory) = Self::create_vertex_buffer(
             vk_context.device_ref(),
             memory_properties,
@@ -243,6 +248,8 @@ impl Engine {
             swapchain_properties: properties,
             texture_image,
             texture_image_memory,
+            texture_image_view,
+            texture_image_sampler,
             transient_command_pool,
             uniform_buffers,
             uniform_buffer_memories,
@@ -618,6 +625,30 @@ impl Engine {
         graphics.is_some() && present.is_some()
     }
 
+    // TODO: Wrap up how to check the device_extensions
+    fn check_device_extension_support(instance: &Instance, device: PhysicalDevice) -> bool {
+        let required_extentions = Self::get_required_device_extensions();
+
+        let extension_props = unsafe {
+            instance
+                .enumerate_device_extension_properties(device)
+                .unwrap()
+        };
+
+        for required in required_extentions.iter() {
+            let found = extension_props.iter().any(|ext| {
+                let name = unsafe { CStr::from_ptr(ext.extension_name.as_ptr()) };
+                required == &name
+            });
+
+            if !found {
+                return false;
+            }
+        }
+
+        true
+    }
+
     /// Queues only support a subset of commands. It finds a graphics queue and present queue that
     /// can present images to the surface that is created.
     fn find_queue_families(
@@ -689,7 +720,9 @@ impl Engine {
             .map(|ext| ext.as_ptr())
             .collect::<Vec<_>>();
 
-        let device_features = PhysicalDeviceFeatures::builder().build();
+        let device_features = PhysicalDeviceFeatures::builder()
+            .sampler_anisotropy(true)
+            .build();
         let (_layer_names, layer_ptrs) = get_layer_names_and_pointers();
 
         let mut device_create_info_builder = DeviceCreateInfo::builder()
@@ -1865,7 +1898,9 @@ impl Drop for Engine {
             device.free_memory(self.vertex_buffer_memory, None);
 
             device.destroy_image(self.texture_image, None);
+            device.destroy_image_view(self.texture_image_view, None);
             device.free_memory(self.texture_image_memory, None);
+            device.destroy_sampler(self.texture_image_sampler, None);
 
             log::debug!("Cleaning up CommandPool...");
             device.destroy_command_pool(self.command_pool, None);
