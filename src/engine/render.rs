@@ -15,7 +15,7 @@ pub const VERTICES: [Vertex; 4] = [
     Vertex {
         position: const_vec2!([-0.5, 0.5]),
         color: const_vec3!([1.0, 1.0, 1.0]),
-        coordinates: const_vec2!([1.0, 0.0])
+        coordinates: const_vec2!([0.0, 1.0])
     },
     Vertex {
         position: const_vec2!([0.5, 0.5]),
@@ -25,7 +25,7 @@ pub const VERTICES: [Vertex; 4] = [
     Vertex {
         position: const_vec2!([0.5, -0.5]),
         color: const_vec3!([1.0, 1.0, 1.0]),
-        coordinates: const_vec2!([1.0, 1.0])
+        coordinates: const_vec2!([1.0, 0.0])
     },
 ];
 
@@ -51,11 +51,12 @@ impl Vertex {
             .build()
     }
 
+    // TODO: Update doc strings
     /// An attribute description struct describes how to extract a vertex
     /// attribute from a chunk of vertex data originating from a binding
     /// description. We have two attributes, position and color, so we need
     /// two attribute description structs.
-    pub fn get_attribute_descriptions() -> [VertexInputAttributeDescription; 2] {
+    pub fn get_attribute_descriptions() -> [VertexInputAttributeDescription; 3] {
         let position_desc = VertexInputAttributeDescription::builder()
             .binding(0)
             .location(0)
@@ -70,6 +71,13 @@ impl Vertex {
             .offset(offset_of!(Vertex, color) as u32)
             .build();
 
-        [position_desc, color_desc]
+        let tex_coord_desc = VertexInputAttributeDescription::builder()
+            .binding(0)
+            .location(2)
+            .format(Format::R32G32B32_SFLOAT)
+            .offset(offset_of!(Vertex, coordinates) as u32)
+            .build();
+
+        [position_desc, color_desc, tex_coord_desc]
     }
 }

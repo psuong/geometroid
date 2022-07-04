@@ -13,28 +13,28 @@ use ash::{
         BufferImageCopy, BufferUsageFlags, ClearColorValue, ClearValue, ColorComponentFlags,
         CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel,
         CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo,
-        CompareOp, ComponentMapping, ComponentSwizzle, CompositeAlphaFlagsKHR, CullModeFlags,
-        DependencyFlags, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateInfo,
-        DescriptorPoolSize, DescriptorSet, DescriptorSetAllocateInfo, DescriptorSetLayout,
-        DescriptorSetLayoutBinding, DescriptorSetLayoutCreateInfo, DescriptorType,
-        DeviceCreateInfo, DeviceMemory, DeviceQueueCreateInfo, DeviceSize, Extent3D, Fence,
-        FenceCreateFlags, FenceCreateInfo, Filter, Format, Framebuffer, FramebufferCreateInfo,
-        FrontFace, GraphicsPipelineCreateInfo, Image, ImageAspectFlags, ImageCreateFlags,
-        ImageCreateInfo, ImageLayout, ImageMemoryBarrier, ImageSubresourceLayers,
-        ImageSubresourceRange, ImageTiling, ImageType, ImageUsageFlags, ImageView,
-        ImageViewCreateInfo, ImageViewType, IndexType, InstanceCreateInfo, LogicOp,
-        MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements, Offset2D,
-        Offset3D, PhysicalDevice, PhysicalDeviceFeatures, PhysicalDeviceMemoryProperties, Pipeline,
-        PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState,
-        PipelineColorBlendStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineLayout,
-        PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo,
-        PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags,
-        PipelineVertexInputStateCreateInfo, PipelineViewportStateCreateInfo, PolygonMode,
-        PrimitiveTopology, Queue, QueueFlags, Rect2D, RenderPass, RenderPassBeginInfo,
-        RenderPassCreateInfo, SampleCountFlags, Sampler, SamplerAddressMode, SamplerCreateInfo,
-        SamplerMipmapMode, SemaphoreCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo,
-        SubpassContents, SubpassDependency, SubpassDescription, SurfaceKHR, SwapchainCreateInfoKHR,
-        SwapchainKHR, Viewport, WriteDescriptorSet, QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL, TRUE,
+        CompareOp, CompositeAlphaFlagsKHR, CullModeFlags, DependencyFlags, DescriptorImageInfo,
+        DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize, DescriptorSet,
+        DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding,
+        DescriptorSetLayoutCreateInfo, DescriptorType, DeviceCreateInfo, DeviceMemory,
+        DeviceQueueCreateInfo, DeviceSize, Extent3D, Fence, FenceCreateFlags, FenceCreateInfo,
+        Filter, Format, Framebuffer, FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo,
+        Image, ImageAspectFlags, ImageCreateFlags, ImageCreateInfo, ImageLayout,
+        ImageMemoryBarrier, ImageSubresourceLayers, ImageSubresourceRange, ImageTiling, ImageType,
+        ImageUsageFlags, ImageView, ImageViewCreateInfo, ImageViewType, IndexType,
+        InstanceCreateInfo, LogicOp, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags,
+        MemoryRequirements, Offset2D, Offset3D, PhysicalDevice, PhysicalDeviceFeatures,
+        PhysicalDeviceMemoryProperties, Pipeline, PipelineBindPoint, PipelineCache,
+        PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo,
+        PipelineInputAssemblyStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo,
+        PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo,
+        PipelineShaderStageCreateInfo, PipelineStageFlags, PipelineVertexInputStateCreateInfo,
+        PipelineViewportStateCreateInfo, PolygonMode, PrimitiveTopology, Queue, QueueFlags, Rect2D,
+        RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags, Sampler,
+        SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode, SemaphoreCreateInfo,
+        ShaderStageFlags, SharingMode, SubmitInfo, SubpassContents, SubpassDependency,
+        SubpassDescription, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR, Viewport,
+        WriteDescriptorSet, QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL, TRUE,
     },
 };
 
@@ -468,7 +468,6 @@ impl Engine {
                     .image_view(image_view)
                     .sampler(sampler)
                     .build();
-
                 let image_infos = [image_info];
 
                 let ubo_descriptor_write = WriteDescriptorSet::builder()
@@ -869,29 +868,9 @@ impl Engine {
         swapchain_images
             .into_iter()
             .map(|image| {
-                let create_info = ImageViewCreateInfo::builder()
-                    .image(*image)
-                    .view_type(ImageViewType::TYPE_2D) // We can use 3D or 1D textures
-                    .format(swapchain_properties.format.format)
-                    .components(ComponentMapping {
-                        r: ComponentSwizzle::IDENTITY,
-                        b: ComponentSwizzle::IDENTITY,
-                        g: ComponentSwizzle::IDENTITY,
-                        a: ComponentSwizzle::IDENTITY,
-                    })
-                    .subresource_range(ImageSubresourceRange {
-                        // Describes the image's purpose
-                        aspect_mask: ImageAspectFlags::COLOR,
-                        base_mip_level: 0,
-                        level_count: 1,
-                        base_array_layer: 0,
-                        layer_count: 1,
-                    })
-                    .build();
-
-                unsafe { device.create_image_view(&create_info, None).unwrap() }
+                Self::create_image_view(device, *image, swapchain_properties.format.format)
             })
-            .collect::<Vec<_>>()
+            .collect::<Vec<ImageView>>()
     }
 
     /// An abstraction of the internals of create_swapchain_image_views. All images are accessed
