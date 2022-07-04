@@ -2,12 +2,12 @@ pub(crate) use crate::common::MAX_FRAMES_IN_FLIGHT;
 use crate::engine::render::Vertex;
 use crate::engine::shader_utils::read_shader_from_file;
 
-use ash::util::Align;
 use ash::{
     extensions::{
         ext::DebugUtils,
         khr::{Surface, Swapchain},
     },
+    util::Align,
     vk::{
         self, AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference,
         AttachmentStoreOp, BlendFactor, BlendOp, BorderColor, Buffer, BufferCopy, BufferCreateInfo,
@@ -35,7 +35,7 @@ use ash::{
         SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode, SemaphoreCreateInfo,
         ShaderStageFlags, SharingMode, SubmitInfo, SubpassContents, SubpassDependency,
         SubpassDescription, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR, Viewport,
-        QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL,
+        QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL, TRUE,
     },
 };
 
@@ -622,10 +622,19 @@ impl Engine {
         device: PhysicalDevice,
     ) -> bool {
         let (graphics, present) = Self::find_queue_families(instance, surface, surface_khr, device);
-        graphics.is_some() && present.is_some()
+        let extension_support = Self::check_device_extension_support(instance, device);
+        let is_swapchain_adequate = {
+            let details = SwapchainSupportDetails::new(device, surface, surface_khr);
+            !details.formats.is_empty() && !details.present_modes.is_empty()
+        };
+        let features = unsafe { instance.get_physical_device_features(device) };
+        graphics.is_some()
+            && present.is_some()
+            && extension_support
+            && is_swapchain_adequate
+            && features.sampler_anisotropy == TRUE
     }
 
-    // TODO: Wrap up how to check the device_extensions
     fn check_device_extension_support(instance: &Instance, device: PhysicalDevice) -> bool {
         let required_extentions = Self::get_required_device_extensions();
 
@@ -755,7 +764,7 @@ impl Engine {
         queue_families_indices: QueueFamiliesIndices,
         dimensions: [u32; 2],
     ) -> (Swapchain, SwapchainKHR, SwapchainProperties, Vec<Image>) {
-        let details = SwapchainSupportDetails::query(
+        let details = SwapchainSupportDetails::new(
             vk_context.physical_device_ref(),
             vk_context.surface_ref(),
             vk_context.surface_khr(),

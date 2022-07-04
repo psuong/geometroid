@@ -78,7 +78,7 @@ pub struct SwapchainSupportDetails {
 }
 
 impl SwapchainSupportDetails {
-    pub fn query(device: PhysicalDevice, surface: &Surface, surface_khr: SurfaceKHR) -> Self {
+    pub fn new(device: PhysicalDevice, surface: &Surface, surface_khr: SurfaceKHR) -> Self {
         let capabilities = unsafe {
             surface
                 .get_physical_device_surface_capabilities(device, surface_khr)
