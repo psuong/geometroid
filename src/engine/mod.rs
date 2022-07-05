@@ -18,14 +18,14 @@ use ash::{
         DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding,
         DescriptorSetLayoutCreateInfo, DescriptorType, DeviceCreateInfo, DeviceMemory,
         DeviceQueueCreateInfo, DeviceSize, Extent3D, Fence, FenceCreateFlags, FenceCreateInfo,
-        Filter, Format, Framebuffer, FramebufferCreateInfo, FrontFace, GraphicsPipelineCreateInfo,
-        Image, ImageAspectFlags, ImageCreateFlags, ImageCreateInfo, ImageLayout,
-        ImageMemoryBarrier, ImageSubresourceLayers, ImageSubresourceRange, ImageTiling, ImageType,
-        ImageUsageFlags, ImageView, ImageViewCreateInfo, ImageViewType, IndexType,
-        InstanceCreateInfo, LogicOp, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags,
-        MemoryRequirements, Offset2D, Offset3D, PhysicalDevice, PhysicalDeviceFeatures,
-        PhysicalDeviceMemoryProperties, Pipeline, PipelineBindPoint, PipelineCache,
-        PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo,
+        Filter, Format, FormatFeatureFlags, Framebuffer, FramebufferCreateInfo, FrontFace,
+        GraphicsPipelineCreateInfo, Image, ImageAspectFlags, ImageCreateFlags, ImageCreateInfo,
+        ImageLayout, ImageMemoryBarrier, ImageSubresourceLayers, ImageSubresourceRange,
+        ImageTiling, ImageType, ImageUsageFlags, ImageView, ImageViewCreateInfo, ImageViewType,
+        IndexType, InstanceCreateInfo, LogicOp, MemoryAllocateInfo, MemoryMapFlags,
+        MemoryPropertyFlags, MemoryRequirements, Offset2D, Offset3D, PhysicalDevice,
+        PhysicalDeviceFeatures, PhysicalDeviceMemoryProperties, Pipeline, PipelineBindPoint,
+        PipelineCache, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo,
         PipelineInputAssemblyStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo,
         PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo,
         PipelineShaderStageCreateInfo, PipelineStageFlags, PipelineVertexInputStateCreateInfo,
@@ -95,6 +95,10 @@ pub struct Engine {
     texture_image_memory: DeviceMemory,
     texture_image_view: ImageView,
     texture_image_sampler: Sampler,
+    // depth_format: Format,
+    // depth_image: Image,
+    // depth_image_memory: DeviceMemory,
+    // depth_image_view: ImageView,
     uniform_buffers: Vec<Buffer>,
     uniform_buffer_memories: Vec<DeviceMemory>,
     vertex_buffer: Buffer,
@@ -498,6 +502,7 @@ impl Engine {
     fn update_uniform_buffers(&mut self, current_image: u32) {
         let elapsed = self.start_instant.elapsed();
         let elapsed = elapsed.as_secs() as f32 + (elapsed.subsec_millis() as f32) / 1_000 as f32;
+        let elapsed = 1.0 as f32;
 
         let aspect = self.swapchain_properties.extent.width as f32
             / self.swapchain_properties.extent.width as f32;
@@ -868,20 +873,30 @@ impl Engine {
         swapchain_images
             .into_iter()
             .map(|image| {
-                Self::create_image_view(device, *image, swapchain_properties.format.format)
+                Self::create_image_view(
+                    device,
+                    *image,
+                    swapchain_properties.format.format,
+                    ImageAspectFlags::COLOR,
+                )
             })
             .collect::<Vec<ImageView>>()
     }
 
     /// An abstraction of the internals of create_swapchain_image_views. All images are accessed
     /// view VkImageView.
-    fn create_image_view(device: &Device, image: Image, format: Format) -> ImageView {
+    fn create_image_view(
+        device: &Device,
+        image: Image,
+        format: Format,
+        aspect_mask: ImageAspectFlags,
+    ) -> ImageView {
         let create_info = ImageViewCreateInfo::builder()
             .image(image)
             .view_type(ImageViewType::TYPE_2D)
             .format(format)
             .subresource_range(ImageSubresourceRange {
-                aspect_mask: ImageAspectFlags::COLOR,
+                aspect_mask,
                 base_mip_level: 0,
                 level_count: 1,
                 base_array_layer: 0,
@@ -1411,7 +1426,7 @@ impl Engine {
     }
 
     fn create_texture_image_view(device: &Device, image: Image) -> ImageView {
-        Self::create_image_view(device, image, Format::R8G8B8A8_UNORM)
+        Self::create_image_view(device, image, Format::R8G8B8A8_UNORM, ImageAspectFlags::COLOR)
     }
 
     fn create_texture_sampler(device: &Device) -> Sampler {
@@ -1659,6 +1674,82 @@ impl Engine {
 
         unsafe { device.bind_buffer_memory(buffer, memory, 0).unwrap() }
         (buffer, memory, mem_requirements.size)
+    }
+
+    fn create_depth_resources(
+        device: &Device,
+        device_mem_properties: PhysicalDeviceMemoryProperties,
+        command_pool: CommandPool,
+        transition_queue: Queue,
+        format: Format,
+        width: u32,
+        height: u32,
+    ) -> (Image, DeviceMemory, ImageView) {
+        let (image, mem) = Self::create_image(
+            device,
+            device_mem_properties,
+            MemoryPropertyFlags::DEVICE_LOCAL,
+            width,
+            height,
+            format,
+            ImageTiling::OPTIMAL,
+            ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
+        );
+
+        Self::transition_image_layout(
+            device,
+            command_pool,
+            transition_queue,
+            image,
+            format,
+            ImageLayout::UNDEFINED,
+            ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        );
+
+        let view = Self::create_image_view(device, image, format, ImageAspectFlags::DEPTH);
+        (image, mem, view)
+    }
+
+    fn find_depth_format(instance: &Instance, device: PhysicalDevice) -> Format {
+        let candidates = vec![
+            Format::D32_SFLOAT,
+            Format::D32_SFLOAT_S8_UINT,
+            Format::D24_UNORM_S8_UINT,
+        ];
+
+        Self::find_supported_format(
+            instance,
+            device,
+            &candidates,
+            ImageTiling::OPTIMAL,
+            FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT,
+        )
+        .expect("Failed to find a supported depth format")
+    }
+
+    fn find_supported_format(
+        instance: &Instance,
+        device: PhysicalDevice,
+        candidates: &[Format],
+        tiling: ImageTiling,
+        features: FormatFeatureFlags,
+    ) -> Option<Format> {
+        candidates.iter().map(|f| *f).find(|candidate| {
+            let props =
+                unsafe { instance.get_physical_device_format_properties(device, *candidate) };
+
+            if tiling == ImageTiling::LINEAR && props.linear_tiling_features.contains(features) {
+                true
+            } else if tiling == ImageTiling::OPTIMAL {
+                true
+            } else {
+                false
+            }
+        })
+    }
+
+    fn has_stencil_component(format: Format) -> bool {
+        format == Format::D32_SFLOAT_S8_UINT || format == Format::D24_UNORM_S8_UINT
     }
 
     /// Finds a memory type in the mem_properties that is suitable

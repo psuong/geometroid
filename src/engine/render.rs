@@ -6,34 +6,57 @@ use ash::vk::{
 use glam::{const_vec2, const_vec3, Vec2, Vec3};
 use memoffset::offset_of;
 
-pub const VERTICES: [Vertex; 4] = [
+pub const VERTICES: [Vertex; 8] = [
+    // First quad
     Vertex {
-        position: const_vec2!([-0.5, -0.5]),
+        position: const_vec3!([-0.5, -0.5, 0.0]),
         color: const_vec3!([1.0, 1.0, 1.0]),
         coordinates: const_vec2!([0.0, 0.0])
     },
     Vertex {
-        position: const_vec2!([-0.5, 0.5]),
+        position: const_vec3!([-0.5, 0.5, 0.0]),
         color: const_vec3!([1.0, 1.0, 1.0]),
         coordinates: const_vec2!([0.0, 1.0])
     },
     Vertex {
-        position: const_vec2!([0.5, 0.5]),
+        position: const_vec3!([0.5, 0.5, 0.0]),
         color: const_vec3!([1.0, 1.0, 1.0]),
         coordinates: const_vec2!([1.0, 1.0])
     },
     Vertex {
-        position: const_vec2!([0.5, -0.5]),
+        position: const_vec3!([0.5, -0.5, 0.0]),
+        color: const_vec3!([1.0, 1.0, 1.0]),
+        coordinates: const_vec2!([1.0, 0.0])
+    },
+
+    // Second quad
+    Vertex {
+        position: const_vec3!([-0.25, -0.25, -0.5]),
+        color: const_vec3!([1.0, 1.0, 1.0]),
+        coordinates: const_vec2!([0.0, 0.0])
+    },
+    Vertex {
+        position: const_vec3!([-0.25, 0.25, -0.5]),
+        color: const_vec3!([1.0, 1.0, 1.0]),
+        coordinates: const_vec2!([0.0, 1.0])
+    },
+    Vertex {
+        position: const_vec3!([0.25, 0.25, -0.5]),
+        color: const_vec3!([1.0, 1.0, 1.0]),
+        coordinates: const_vec2!([1.0, 1.0])
+    },
+    Vertex {
+        position: const_vec3!([0.25, -0.25, -0.5]),
         color: const_vec3!([1.0, 1.0, 1.0]),
         coordinates: const_vec2!([1.0, 0.0])
     },
 ];
 
-pub const INDICES: [u16; 6] = [0, 1, 2, 0, 2, 3];
+pub const INDICES: [u16; 12] = [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7];
 
 #[derive(Copy, Clone)]
 pub struct Vertex {
-    pub position: Vec2,
+    pub position: Vec3,
     pub color: Vec3,
     pub coordinates: Vec2,
 }
