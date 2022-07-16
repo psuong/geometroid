@@ -36,17 +36,17 @@ pub const VERTICES: [Vertex; 8] = [
         coordinates: const_vec2!([0.0, 0.0])
     },
     Vertex {
-        position: const_vec3!([-0.25, 0.25, -0.5]),
+        position: const_vec3!([-0.25, 0.75, -0.5]),
         color: const_vec3!([1.0, 1.0, 1.0]),
         coordinates: const_vec2!([0.0, 1.0])
     },
     Vertex {
-        position: const_vec3!([0.25, 0.25, -0.5]),
+        position: const_vec3!([0.75, 0.75, -0.5]),
         color: const_vec3!([1.0, 1.0, 1.0]),
         coordinates: const_vec2!([1.0, 1.0])
     },
     Vertex {
-        position: const_vec3!([0.25, -0.25, -0.5]),
+        position: const_vec3!([0.75, -0.25, -0.5]),
         color: const_vec3!([1.0, 1.0, 1.0]),
         coordinates: const_vec2!([1.0, 0.0])
     },
