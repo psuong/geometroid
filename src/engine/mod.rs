@@ -35,16 +35,14 @@ use ash::{
         ShaderStageFlags, SharingMode, SubmitInfo, SubpassContents, SubpassDependency,
         SubpassDescription, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR, Viewport,
         WriteDescriptorSet, QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL, TRUE,
-    },
+    }, Device, Entry, Instance,
 };
 
-use ash::{Device, Entry, Instance};
 use glam::{Mat4, Vec3};
 use std::{
     ffi::{CStr, CString},
-    mem::{align_of, size_of},
+    mem::{align_of, size_of}, panic, time::Instant,
 };
-use std::{panic, time::Instant};
 use winit::window::Window;
 
 pub mod context;
@@ -360,7 +358,7 @@ impl Engine {
 
         // Submit command buffer
         {
-            let wait_stages = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
+            let wait_stages = [PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
             let command_buffers = [self.command_buffers[image_index as usize]];
             let submit_info = vk::SubmitInfo::builder()
                 .wait_semaphores(&wait_semaphores)
@@ -1367,30 +1365,24 @@ impl Engine {
         Self::execute_one_time_commands(device, command_pool, transition_queue, |buffer| {
             let (src_access_mask, dst_access_mask, src_stage, dst_stage) =
                 match (old_layout, new_layout) {
-                    (vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL) => (
-                        vk::AccessFlags::empty(),
-                        vk::AccessFlags::TRANSFER_WRITE,
-                        vk::PipelineStageFlags::TOP_OF_PIPE,
-                        vk::PipelineStageFlags::TRANSFER,
+                    (ImageLayout::UNDEFINED, ImageLayout::TRANSFER_DST_OPTIMAL) => (
+                        AccessFlags::empty(),
+                        AccessFlags::TRANSFER_WRITE,
+                        PipelineStageFlags::TOP_OF_PIPE,
+                        PipelineStageFlags::TRANSFER,
                     ),
-                    (
-                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                        vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                    ) => (
-                        vk::AccessFlags::TRANSFER_WRITE,
-                        vk::AccessFlags::SHADER_READ,
-                        vk::PipelineStageFlags::TRANSFER,
-                        vk::PipelineStageFlags::FRAGMENT_SHADER,
+                    (ImageLayout::TRANSFER_DST_OPTIMAL, ImageLayout::SHADER_READ_ONLY_OPTIMAL) => (
+                        AccessFlags::TRANSFER_WRITE,
+                        AccessFlags::SHADER_READ,
+                        PipelineStageFlags::TRANSFER,
+                        PipelineStageFlags::FRAGMENT_SHADER,
                     ),
-                    (
-                        vk::ImageLayout::UNDEFINED,
-                        vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                    ) => (
-                        vk::AccessFlags::empty(),
-                        vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ
-                            | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
-                        vk::PipelineStageFlags::TOP_OF_PIPE,
-                        vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS,
+                    (ImageLayout::UNDEFINED, ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL) => (
+                        AccessFlags::empty(),
+                        AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ
+                            | AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
+                        PipelineStageFlags::TOP_OF_PIPE,
+                        PipelineStageFlags::EARLY_FRAGMENT_TESTS,
                     ),
                     _ => panic!(
                         "Unsupported layout transition({:?} => {:?}).",
