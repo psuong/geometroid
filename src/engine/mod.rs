@@ -34,14 +34,17 @@ use ash::{
         SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode, SemaphoreCreateInfo,
         ShaderStageFlags, SharingMode, SubmitInfo, SubpassContents, SubpassDependency,
         SubpassDescription, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR, Viewport,
-        WriteDescriptorSet, QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL, TRUE,
-    }, Device, Entry, Instance,
+        WriteDescriptorSet, QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL, TRUE, ClearDepthStencilValue,
+    },
+    Device, Entry, Instance,
 };
 
 use glam::{Mat4, Vec3};
 use std::{
     ffi::{CStr, CString},
-    mem::{align_of, size_of}, panic, time::Instant,
+    mem::{align_of, size_of},
+    panic,
+    time::Instant,
 };
 use winit::window::Window;
 
@@ -581,10 +584,23 @@ impl Engine {
         let (pipeline, layout) =
             Self::create_pipeline(&device, properties, render_pass, self.descriptor_set_layout);
 
+        let memory_properties = unsafe {
+            self.vk_context.instance_ref().get_physical_device_memory_properties(self._physical_device)
+        };
+
+        let (depth_image, depth_image_memory, depth_image_view) = Self::create_depth_resources(
+            self.vk_context.device_ref(), 
+            memory_properties, 
+            self.command_pool, 
+            self.graphics_queue, 
+            self.depth_format, 
+            properties.extent.width, 
+            properties.extent.height);
+
         let swapchain_framebuffers = Self::create_framebuffers(
             device,
             &swapchain_image_views,
-            self.depth_image_view,
+            depth_image_view,
             render_pass,
             properties,
         );
@@ -610,6 +626,9 @@ impl Engine {
         self.render_pass = render_pass;
         self.pipeline = pipeline;
         self.pipeline_layout = layout;
+        self.depth_image = depth_image;
+        self.depth_image_memory = depth_image_memory;
+        self.depth_image_view = depth_image_view;
         self.swapchain_framebuffers = swapchain_framebuffers;
         self.command_buffers = command_buffers;
     }
@@ -1884,11 +1903,19 @@ impl Engine {
 
             // begin the render pass
             {
-                let clear_values = [ClearValue {
-                    color: ClearColorValue {
-                        float32: [0.0, 0.0, 0.0, 1.0],
+                let clear_values = [
+                    ClearValue {
+                        color: ClearColorValue {
+                            float32: [0.0, 0.0, 0.0, 1.0],
+                        }
+                    }, 
+                    ClearValue {
+                        depth_stencil: ClearDepthStencilValue {
+                            depth: 1.0,
+                            stencil: 0,
+                        },
                     },
-                }];
+                ];
 
                 let render_pass_begin_info = RenderPassBeginInfo::builder()
                     .render_pass(render_pass)
