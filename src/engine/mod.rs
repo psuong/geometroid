@@ -95,10 +95,10 @@ pub struct Engine {
     texture_image_memory: DeviceMemory,
     texture_image_view: ImageView,
     texture_image_sampler: Sampler,
-    // depth_format: Format,
-    // depth_image: Image,
-    // depth_image_memory: DeviceMemory,
-    // depth_image_view: ImageView,
+    depth_format: Format,
+    depth_image: Image,
+    depth_image_memory: DeviceMemory,
+    depth_image_view: ImageView,
     uniform_buffers: Vec<Buffer>,
     uniform_buffer_memories: Vec<DeviceMemory>,
     vertex_buffer: Buffer,
@@ -146,20 +146,16 @@ impl Engine {
         let swapchain_image_views =
             Self::create_swapchain_image_views(vk_context.device_ref(), &images, properties);
 
-        let render_pass = Self::create_render_pass(vk_context.device_ref(), properties);
+        let depth_format = Self::find_depth_format(vk_context.instance_ref(), physical_device);
+
+        let render_pass =
+            Self::create_render_pass(vk_context.device_ref(), properties, depth_format);
         let descriptor_set_layout = Self::create_descriptor_set_layout(vk_context.device_ref());
         let (pipeline, layout) = Self::create_pipeline(
             vk_context.device_ref(),
             properties,
             render_pass,
             descriptor_set_layout,
-        );
-
-        let swapchain_framebuffers = Self::create_framebuffers(
-            vk_context.device_ref(),
-            &swapchain_image_views,
-            render_pass,
-            properties,
         );
 
         let command_pool = Self::create_command_pool(
@@ -172,6 +168,24 @@ impl Engine {
             vk_context.device_ref(),
             queue_families_indices,
             CommandPoolCreateFlags::empty(),
+        );
+
+        let (depth_image, depth_image_memory, depth_image_view) = Self::create_depth_resources(
+            vk_context.device_ref(),
+            memory_properties,
+            command_pool,
+            graphics_queue,
+            depth_format,
+            properties.extent.width,
+            properties.extent.height,
+        );
+
+        let swapchain_framebuffers = Self::create_framebuffers(
+            vk_context.device_ref(),
+            &swapchain_image_views,
+            depth_image_view,
+            render_pass,
+            properties,
         );
 
         let (texture_image, texture_image_memory) = Self::create_texture_image(
@@ -256,6 +270,10 @@ impl Engine {
             texture_image_memory,
             texture_image_view,
             texture_image_sampler,
+            depth_format,
+            depth_image,
+            depth_image_memory,
+            depth_image_view,
             transient_command_pool,
             uniform_buffers,
             uniform_buffer_memories,
@@ -561,12 +579,17 @@ impl Engine {
         );
         let swapchain_image_views = Self::create_swapchain_image_views(device, &images, properties);
 
-        let render_pass = Self::create_render_pass(device, properties);
+        let render_pass = Self::create_render_pass(device, properties, self.depth_format);
         let (pipeline, layout) =
             Self::create_pipeline(&device, properties, render_pass, self.descriptor_set_layout);
 
-        let swapchain_framebuffers =
-            Self::create_framebuffers(device, &swapchain_image_views, render_pass, properties);
+        let swapchain_framebuffers = Self::create_framebuffers(
+            device,
+            &swapchain_image_views,
+            self.depth_image_view,
+            render_pass,
+            properties,
+        );
 
         let command_buffers = Self::create_and_register_command_buffers(
             &device,
@@ -1062,7 +1085,6 @@ impl Engine {
             .viewport_state(&viewport_info)
             .rasterization_state(&rasterizer_info)
             .multisample_state(&multisampling_info)
-            // .depth_stencil_state(depth_stencil_state)
             .color_blend_state(&color_blending_info)
             .layout(layout)
             .render_pass(render_pass)
@@ -1089,8 +1111,9 @@ impl Engine {
     fn create_render_pass(
         device: &Device,
         swapchain_properties: SwapchainProperties,
+        depth_format: Format,
     ) -> RenderPass {
-        let attachment_desc = AttachmentDescription::builder()
+        let color_attachment_desc = AttachmentDescription::builder()
             .format(swapchain_properties.format.format)
             .samples(SampleCountFlags::TYPE_1)
             .load_op(AttachmentLoadOp::CLEAR)
@@ -1098,7 +1121,19 @@ impl Engine {
             .initial_layout(ImageLayout::UNDEFINED)
             .final_layout(ImageLayout::PRESENT_SRC_KHR)
             .build();
-        let attachment_descs = [attachment_desc];
+
+        let depth_attachment_desc = AttachmentDescription::builder()
+            .format(depth_format)
+            .samples(SampleCountFlags::TYPE_1)
+            .load_op(AttachmentLoadOp::CLEAR)
+            .store_op(AttachmentStoreOp::DONT_CARE)
+            .stencil_load_op(AttachmentLoadOp::DONT_CARE)
+            .stencil_store_op(AttachmentStoreOp::DONT_CARE)
+            .initial_layout(ImageLayout::UNDEFINED)
+            .final_layout(ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+            .build();
+
+        let attachment_descs = [color_attachment_desc, depth_attachment_desc];
 
         // The first attachment is pretty much a color buffer
         let attachment_ref = AttachmentReference::builder()
@@ -1150,12 +1185,13 @@ impl Engine {
     fn create_framebuffers(
         device: &Device,
         image_views: &[ImageView],
+        depth_image_view: vk::ImageView,
         render_pass: RenderPass,
         swapchain_properties: SwapchainProperties,
     ) -> Vec<Framebuffer> {
         image_views
             .into_iter()
-            .map(|view| [*view])
+            .map(|view| [*view, depth_image_view])
             .map(|attachment| {
                 let framebuffer_info = FramebufferCreateInfo::builder()
                     .render_pass(render_pass)
@@ -1324,7 +1360,7 @@ impl Engine {
         command_pool: CommandPool,
         transition_queue: Queue,
         image: Image,
-        _format: Format,
+        format: Format,
         old_layout: ImageLayout,
         new_layout: ImageLayout,
     ) {
@@ -1346,11 +1382,31 @@ impl Engine {
                         vk::PipelineStageFlags::TRANSFER,
                         vk::PipelineStageFlags::FRAGMENT_SHADER,
                     ),
+                    (
+                        vk::ImageLayout::UNDEFINED,
+                        vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                    ) => (
+                        vk::AccessFlags::empty(),
+                        vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ
+                            | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
+                        vk::PipelineStageFlags::TOP_OF_PIPE,
+                        vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS,
+                    ),
                     _ => panic!(
                         "Unsupported layout transition({:?} => {:?}).",
                         old_layout, new_layout
                     ),
                 };
+
+            let aspect_mask = if new_layout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL {
+                let mut mask = ImageAspectFlags::DEPTH;
+                if Self::has_stencil_component(format) {
+                    mask = mask | ImageAspectFlags::STENCIL;
+                }
+                mask
+            } else {
+                ImageAspectFlags::COLOR
+            };
 
             let barrier = ImageMemoryBarrier::builder()
                 .old_layout(old_layout)
@@ -1359,7 +1415,7 @@ impl Engine {
                 .dst_queue_family_index(QUEUE_FAMILY_IGNORED)
                 .image(image)
                 .subresource_range(ImageSubresourceRange {
-                    aspect_mask: ImageAspectFlags::COLOR,
+                    aspect_mask,
                     base_mip_level: 0,
                     level_count: 1,
                     base_array_layer: 0,
@@ -1426,7 +1482,12 @@ impl Engine {
     }
 
     fn create_texture_image_view(device: &Device, image: Image) -> ImageView {
-        Self::create_image_view(device, image, Format::R8G8B8A8_UNORM, ImageAspectFlags::COLOR)
+        Self::create_image_view(
+            device,
+            image,
+            Format::R8G8B8A8_UNORM,
+            ImageAspectFlags::COLOR,
+        )
     }
 
     fn create_texture_sampler(device: &Device) -> Sampler {
@@ -1935,6 +1996,9 @@ impl Drop for Engine {
         let device = self.vk_context.device_ref();
         self.in_flight_frames.destroy(self.vk_context.device_ref());
         unsafe {
+            device.destroy_image_view(self.depth_image_view, None);
+            device.destroy_image(self.depth_image, None);
+            device.free_memory(self.depth_image_memory, None);
             device.destroy_descriptor_pool(self.descriptor_pool, None);
             device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
             self.uniform_buffer_memories
