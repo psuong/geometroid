@@ -14,9 +14,9 @@ pub const VERTICES: [Vertex; 8] = [
         coordinates: const_vec2!([0.0, 0.0])
     },
     Vertex {
-        position: const_vec3!([-0.5, 0.5, 0.0]),
+        position: const_vec3!([0.5, -0.5, 0.0]),
         color: const_vec3!([1.0, 1.0, 1.0]),
-        coordinates: const_vec2!([0.0, 1.0])
+        coordinates: const_vec2!([1.0, 0.0])
     },
     Vertex {
         position: const_vec3!([0.5, 0.5, 0.0]),
@@ -24,34 +24,34 @@ pub const VERTICES: [Vertex; 8] = [
         coordinates: const_vec2!([1.0, 1.0])
     },
     Vertex {
-        position: const_vec3!([0.5, -0.5, 0.0]),
+        position: const_vec3!([-0.5, 0.5, 0.0]),
         color: const_vec3!([1.0, 1.0, 1.0]),
-        coordinates: const_vec2!([1.0, 0.0])
+        coordinates: const_vec2!([0.0, 1.0])
     },
-
     // Second quad
     Vertex {
-        position: const_vec3!([-0.25, -0.25, -0.5]),
+        position: const_vec3!([-0.5, -0.5, -0.5]),
         color: const_vec3!([1.0, 1.0, 1.0]),
         coordinates: const_vec2!([0.0, 0.0])
     },
     Vertex {
-        position: const_vec3!([-0.25, 0.75, -0.5]),
+        position: const_vec3!([0.5, -0.5, -0.5]),
         color: const_vec3!([1.0, 1.0, 1.0]),
-        coordinates: const_vec2!([0.0, 1.0])
+        coordinates: const_vec2!([1.0, 0.0])
     },
     Vertex {
-        position: const_vec3!([0.75, 0.75, -0.5]),
+        position: const_vec3!([0.5, 0.5, -0.5]),
         color: const_vec3!([1.0, 1.0, 1.0]),
         coordinates: const_vec2!([1.0, 1.0])
     },
     Vertex {
-        position: const_vec3!([0.75, -0.25, -0.5]),
+        position: const_vec3!([-0.5, 0.5, -0.5]),
         color: const_vec3!([1.0, 1.0, 1.0]),
-        coordinates: const_vec2!([1.0, 0.0])
+        coordinates: const_vec2!([0.0, 1.0])
     },
 ];
 
+// pub const INDICES: [u16; 12] = [0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4];
 pub const INDICES: [u16; 12] = [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7];
 
 #[derive(Copy, Clone)]
@@ -83,7 +83,7 @@ impl Vertex {
         let position_desc = VertexInputAttributeDescription::builder()
             .binding(0)
             .location(0)
-            .format(Format::R32G32_SFLOAT)
+            .format(Format::R32G32B32_SFLOAT)
             .offset(offset_of!(Vertex, position) as u32)
             .build();
 

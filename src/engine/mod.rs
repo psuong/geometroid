@@ -34,7 +34,7 @@ use ash::{
         SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode, SemaphoreCreateInfo,
         ShaderStageFlags, SharingMode, SubmitInfo, SubpassContents, SubpassDependency,
         SubpassDescription, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR, Viewport,
-        WriteDescriptorSet, QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL, TRUE, ClearDepthStencilValue,
+        WriteDescriptorSet, QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL, TRUE, ClearDepthStencilValue
     },
     Device, Entry, Instance,
 };
@@ -78,7 +78,7 @@ pub struct Engine {
     in_flight_frames: InFlightFrames,
     index_buffer: Buffer,
     index_buffer_memory: DeviceMemory,
-    _physical_device: PhysicalDevice,
+    physical_device: PhysicalDevice,
     pipeline: Pipeline,
     pipeline_layout: PipelineLayout,
     present_queue: Queue,
@@ -254,7 +254,7 @@ impl Engine {
             in_flight_frames,
             index_buffer,
             index_buffer_memory,
-            _physical_device: physical_device,
+            physical_device,
             pipeline,
             pipeline_layout: layout,
             present_queue,
@@ -524,15 +524,15 @@ impl Engine {
         let elapsed = 1.0 as f32;
 
         let aspect = self.swapchain_properties.extent.width as f32
-            / self.swapchain_properties.extent.width as f32;
+            / self.swapchain_properties.extent.height as f32;
         let ubo = UniformBufferObject {
             model: Mat4::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), (90.0 * elapsed).to_radians()),
-            view: Mat4::look_at_lh(
+            view: Mat4::look_at_rh(
                 Vec3::new(2.0, 2.0, 2.0),
                 Vec3::new(0.0, 0.0, 0.0),
                 Vec3::new(0.0, 0.0, 1.0),
             ),
-            proj: Mat4::perspective_lh((45.0 as f32).to_radians(), aspect, 0.1, 10.0),
+            proj: Mat4::perspective_rh((45.0 as f32).to_radians(), aspect, 0.1, 10.0),
         };
 
         let ubos = [ubo];
@@ -585,7 +585,7 @@ impl Engine {
             Self::create_pipeline(&device, properties, render_pass, self.descriptor_set_layout);
 
         let memory_properties = unsafe {
-            self.vk_context.instance_ref().get_physical_device_memory_properties(self._physical_device)
+            self.vk_context.instance_ref().get_physical_device_memory_properties(self.physical_device)
         };
 
         let (depth_image, depth_image_memory, depth_image_view) = Self::create_depth_resources(
@@ -1066,6 +1066,18 @@ impl Engine {
             .alpha_to_one_enable(false)
             .build();
 
+        let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
+            .depth_test_enable(true)
+            .depth_write_enable(true)
+            .depth_compare_op(vk::CompareOp::LESS)
+            .depth_bounds_test_enable(false)
+            .min_depth_bounds(0.0)
+            .max_depth_bounds(1.0)
+            .stencil_test_enable(false)
+            .front(Default::default())
+            .back(Default::default())
+            .build();
+
         let color_blending_attachment = PipelineColorBlendAttachmentState::builder()
             .color_write_mask(ColorComponentFlags::all())
             .blend_enable(false)
@@ -1085,7 +1097,6 @@ impl Engine {
             .blend_constants([0.0, 0.0, 0.0, 0.0])
             .build();
 
-        // TODO: Add depth & stencil testing here.
         let layout = {
             let layouts = [descriptor_set_layout];
             let layout_info = PipelineLayoutCreateInfo::builder()
@@ -1102,6 +1113,7 @@ impl Engine {
             .viewport_state(&viewport_info)
             .rasterization_state(&rasterizer_info)
             .multisample_state(&multisampling_info)
+            .depth_stencil_state(&depth_stencil_info)
             .color_blend_state(&color_blending_info)
             .layout(layout)
             .render_pass(render_pass)
@@ -1153,16 +1165,22 @@ impl Engine {
         let attachment_descs = [color_attachment_desc, depth_attachment_desc];
 
         // The first attachment is pretty much a color buffer
-        let attachment_ref = AttachmentReference::builder()
+        let color_attachment_ref = AttachmentReference::builder()
             .attachment(0)
             .layout(ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
             .build();
-        let attachment_refs = [attachment_ref];
+        let attachment_refs = [color_attachment_ref];
+
+        let depth_attachment_ref = AttachmentReference::builder()
+            .attachment(1)
+            .layout(ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+            .build();
 
         // Every subpass references 1 or more attachment descriptions.
         let subpass_desc = SubpassDescription::builder()
             .pipeline_bind_point(PipelineBindPoint::GRAPHICS)
             .color_attachments(&attachment_refs)
+            .depth_stencil_attachment(&depth_attachment_ref)
             .build();
         let subpass_descs = [subpass_desc];
 
@@ -1233,10 +1251,8 @@ impl Engine {
     ) -> (Image, DeviceMemory) {
         let image = image::open("assets/images/statue.jpg").unwrap();
         let image_as_rgb = image.to_rgba8();
-
         let image_width = (&image_as_rgb).width();
         let image_height = (&image_as_rgb).height();
-
         let pixels = image_as_rgb.into_raw();
         let image_size = (pixels.len() * size_of::<u8>()) as DeviceSize;
 
@@ -1812,7 +1828,8 @@ impl Engine {
 
             if tiling == ImageTiling::LINEAR && props.linear_tiling_features.contains(features) {
                 true
-            } else if tiling == ImageTiling::OPTIMAL {
+            } else if tiling == ImageTiling::OPTIMAL &&
+                props.optimal_tiling_features.contains(features) {
                 true
             } else {
                 false
