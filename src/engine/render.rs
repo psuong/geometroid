@@ -14,9 +14,9 @@ pub const VERTICES: [Vertex; 8] = [
         coordinates: const_vec2!([0.0, 0.0])
     },
     Vertex {
-        position: const_vec3!([0.5, -0.5, 0.0]),
+        position: const_vec3!([-0.5, 0.5, 0.0]),
         color: const_vec3!([1.0, 1.0, 1.0]),
-        coordinates: const_vec2!([1.0, 0.0])
+        coordinates: const_vec2!([0.0, 1.0])
     },
     Vertex {
         position: const_vec3!([0.5, 0.5, 0.0]),
@@ -24,9 +24,9 @@ pub const VERTICES: [Vertex; 8] = [
         coordinates: const_vec2!([1.0, 1.0])
     },
     Vertex {
-        position: const_vec3!([-0.5, 0.5, 0.0]),
+        position: const_vec3!([0.5, -0.5, 0.0]),
         color: const_vec3!([1.0, 1.0, 1.0]),
-        coordinates: const_vec2!([0.0, 1.0])
+        coordinates: const_vec2!([1.0, 0.0])
     },
     // Second quad
     Vertex {
@@ -35,9 +35,9 @@ pub const VERTICES: [Vertex; 8] = [
         coordinates: const_vec2!([0.0, 0.0])
     },
     Vertex {
-        position: const_vec3!([0.5, -0.5, -0.5]),
+        position: const_vec3!([-0.5, 0.5, -0.5]),
         color: const_vec3!([1.0, 1.0, 1.0]),
-        coordinates: const_vec2!([1.0, 0.0])
+        coordinates: const_vec2!([0.0, 1.0])
     },
     Vertex {
         position: const_vec3!([0.5, 0.5, -0.5]),
@@ -45,9 +45,9 @@ pub const VERTICES: [Vertex; 8] = [
         coordinates: const_vec2!([1.0, 1.0])
     },
     Vertex {
-        position: const_vec3!([-0.5, 0.5, -0.5]),
+        position: const_vec3!([0.5, -0.5, -0.5]),
         color: const_vec3!([1.0, 1.0, 1.0]),
-        coordinates: const_vec2!([0.0, 1.0])
+        coordinates: const_vec2!([1.0, 0.0])
     },
 ];
 
