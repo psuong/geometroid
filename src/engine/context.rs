@@ -1,6 +1,6 @@
 use ash::{
     extensions::{ext::DebugUtils, khr::Surface},
-    vk::{DebugUtilsMessengerEXT, PhysicalDevice, SurfaceKHR},
+    vk::{DebugUtilsMessengerEXT, PhysicalDevice, SurfaceKHR, PhysicalDeviceMemoryProperties, Format, ImageTiling, FormatFeatureFlags, SampleCountFlags},
     Device, Entry, Instance,
 };
 
@@ -35,56 +35,56 @@ impl VkContext {
         }
     }
 
-    // pub fn get_mem_properties(&self) -> PhysicalDeviceMemoryProperties {
-    //     unsafe {
-    //         self.instance
-    //             .get_physical_device_memory_properties(self.physical_device)
-    //     }
-    // }
+    pub fn get_mem_properties(&self) -> PhysicalDeviceMemoryProperties {
+        unsafe {
+            self.instance
+                .get_physical_device_memory_properties(self.physical_device)
+        }
+    }
 
-    // pub fn find_supported_format(
-    //     &self,
-    //     candidates: &[Format],
-    //     tiling: ImageTiling,
-    //     features: FormatFeatureFlags,
-    // ) -> Option<Format> {
-    //     candidates.iter().cloned().find(|candidate| {
-    //         let props = unsafe {
-    //             self.instance
-    //                 .get_physical_device_format_properties(self.physical_device, *candidate)
-    //         };
+    pub fn find_supported_format(
+        &self,
+        candidates: &[Format],
+        tiling: ImageTiling,
+        features: FormatFeatureFlags,
+    ) -> Option<Format> {
+        candidates.iter().cloned().find(|candidate| {
+            let props = unsafe {
+                self.instance
+                    .get_physical_device_format_properties(self.physical_device, *candidate)
+            };
 
-    //         (tiling == ImageTiling::LINEAR && props.linear_tiling_features.contains(features))
-    //             || (tiling == ImageTiling::OPTIMAL
-    //                 && props.optimal_tiling_features.contains(features))
-    //     })
-    // }
+            (tiling == ImageTiling::LINEAR && props.linear_tiling_features.contains(features))
+                || (tiling == ImageTiling::OPTIMAL
+                    && props.optimal_tiling_features.contains(features))
+        })
+    }
 
-    // pub fn get_max_usable_sample_count(&self) -> vk::SampleCountFlags {
-    //     let props = unsafe {
-    //         self.instance
-    //             .get_physical_device_properties(self.physical_device)
-    //     };
-    //     let color_sample_counts = props.limits.framebuffer_color_sample_counts;
-    //     let depth_sample_counts = props.limits.framebuffer_depth_sample_counts;
-    //     let sample_counts = color_sample_counts.min(depth_sample_counts);
+    pub fn get_max_usable_sample_count(&self) -> SampleCountFlags {
+        let props = unsafe {
+            self.instance
+                .get_physical_device_properties(self.physical_device)
+        };
+        let color_sample_counts = props.limits.framebuffer_color_sample_counts;
+        let depth_sample_counts = props.limits.framebuffer_depth_sample_counts;
+        let sample_counts = color_sample_counts.min(depth_sample_counts);
 
-    //     if sample_counts.contains(vk::SampleCountFlags::TYPE_64) {
-    //         SampleCountFlags::TYPE_64
-    //     } else if sample_counts.contains(vk::SampleCountFlags::TYPE_32) {
-    //         SampleCountFlags::TYPE_32
-    //     } else if sample_counts.contains(vk::SampleCountFlags::TYPE_16) {
-    //         SampleCountFlags::TYPE_16
-    //     } else if sample_counts.contains(vk::SampleCountFlags::TYPE_8) {
-    //         SampleCountFlags::TYPE_8
-    //     } else if sample_counts.contains(vk::SampleCountFlags::TYPE_4) {
-    //         SampleCountFlags::TYPE_4
-    //     } else if sample_counts.contains(vk::SampleCountFlags::TYPE_2) {
-    //         SampleCountFlags::TYPE_2
-    //     } else {
-    //         SampleCountFlags::TYPE_1
-    //     }
-    // }
+        if sample_counts.contains(SampleCountFlags::TYPE_64) {
+            SampleCountFlags::TYPE_64
+        } else if sample_counts.contains(SampleCountFlags::TYPE_32) {
+            SampleCountFlags::TYPE_32
+        } else if sample_counts.contains(SampleCountFlags::TYPE_16) {
+            SampleCountFlags::TYPE_16
+        } else if sample_counts.contains(SampleCountFlags::TYPE_8) {
+            SampleCountFlags::TYPE_8
+        } else if sample_counts.contains(SampleCountFlags::TYPE_4) {
+            SampleCountFlags::TYPE_4
+        } else if sample_counts.contains(SampleCountFlags::TYPE_2) {
+            SampleCountFlags::TYPE_2
+        } else {
+            SampleCountFlags::TYPE_1
+        }
+    }
 
     pub fn instance_ref(&self) -> &Instance {
         &self.instance

@@ -34,7 +34,7 @@ use ash::{
         SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode, SemaphoreCreateInfo,
         ShaderStageFlags, SharingMode, SubmitInfo, SubpassContents, SubpassDependency,
         SubpassDescription, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR, Viewport,
-        WriteDescriptorSet, QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL, TRUE,
+        WriteDescriptorSet, QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL, TRUE, Extent2D,
     },
     Device, Entry, Instance,
 };
@@ -54,6 +54,7 @@ pub mod render;
 pub mod shader_utils;
 pub mod uniform_buffer_object;
 pub mod utils;
+pub mod texture;
 
 use context::VkContext;
 use debug::{
@@ -61,7 +62,7 @@ use debug::{
 };
 use utils::QueueFamiliesIndices;
 
-use self::render::{INDICES, VERTICES};
+use self::{render::{INDICES, VERTICES}, texture::Texture};
 use self::uniform_buffer_object::UniformBufferObject;
 use self::utils::{InFlightFrames, SyncObjects};
 use self::{shader_utils::create_shader_module, utils::SwapchainProperties};
@@ -78,7 +79,6 @@ pub struct Engine {
     in_flight_frames: InFlightFrames,
     index_buffer: Buffer,
     index_buffer_memory: DeviceMemory,
-    physical_device: PhysicalDevice,
     pipeline: Pipeline,
     pipeline_layout: PipelineLayout,
     present_queue: Queue,
@@ -92,14 +92,9 @@ pub struct Engine {
     swapchain_khr: SwapchainKHR,
     swapchain_properties: SwapchainProperties,
     transient_command_pool: CommandPool,
-    texture_image: Image,
-    texture_image_memory: DeviceMemory,
-    texture_image_view: ImageView,
-    texture_image_sampler: Sampler,
     depth_format: Format,
-    depth_image: Image,
-    depth_image_memory: DeviceMemory,
-    depth_image_view: ImageView,
+    depth_texture: Texture,
+    texture: Texture,
     uniform_buffers: Vec<Buffer>,
     uniform_buffer_memories: Vec<DeviceMemory>,
     vertex_buffer: Buffer,
@@ -171,51 +166,37 @@ impl Engine {
             CommandPoolCreateFlags::empty(),
         );
 
-        let (depth_image, depth_image_memory, depth_image_view) = Self::create_depth_resources(
-            vk_context.device_ref(),
-            memory_properties,
-            command_pool,
-            graphics_queue,
-            depth_format,
-            properties.extent.width,
-            properties.extent.height,
-        );
+        let depth_texture = Self::create_depth_texture(
+            &vk_context, 
+            command_pool, 
+            graphics_queue, 
+            depth_format, 
+            properties.extent);
 
         let swapchain_framebuffers = Self::create_framebuffers(
             vk_context.device_ref(),
             &swapchain_image_views,
-            depth_image_view,
+            depth_texture,
             render_pass,
             properties,
         );
 
-        let (texture_image, texture_image_memory) = Self::create_texture_image(
-            vk_context.device_ref(),
-            memory_properties,
-            command_pool,
-            graphics_queue,
-        );
-
-        let texture_image_view =
-            Self::create_texture_image_view(vk_context.device_ref(), texture_image);
-        let texture_image_sampler = Self::create_texture_sampler(vk_context.device_ref());
+        let texture = Self::create_texture_image(&vk_context, command_pool, graphics_queue);
 
         let (vertex_buffer, vertex_buffer_memory) = Self::create_vertex_buffer(
-            vk_context.device_ref(),
-            memory_properties,
+            &vk_context,
             transient_command_pool,
             graphics_queue,
         );
 
         let (index_buffer, index_buffer_memory) = Self::create_index_buffer(
-            vk_context.device_ref(),
-            memory_properties,
+            &vk_context,
             transient_command_pool,
             graphics_queue,
         );
 
         let (uniform_buffers, uniform_buffer_memories) =
-            Self::create_uniform_buffers(vk_context.device_ref(), memory_properties, images.len());
+            Self::create_uniform_buffers(&vk_context, images.len());
 
         let descriptor_pool =
             Self::create_descriptor_pool(vk_context.device_ref(), images.len() as _);
@@ -224,8 +205,7 @@ impl Engine {
             descriptor_pool,
             descriptor_set_layout,
             &uniform_buffers,
-            texture_image_view,
-            texture_image_sampler,
+            texture,
         );
 
         let command_buffers = Self::create_and_register_command_buffers(
@@ -243,44 +223,38 @@ impl Engine {
 
         let in_flight_frames = Self::create_sync_objects(vk_context.device_ref());
 
-        Engine {
-            command_buffers,
-            command_pool,
-            descriptor_set_layout,
-            descriptor_pool,
-            descriptor_sets,
-            graphics_queue,
-            images,
-            in_flight_frames,
-            index_buffer,
-            index_buffer_memory,
-            physical_device,
-            pipeline,
-            pipeline_layout: layout,
-            present_queue,
-            queue_families_indices,
-            render_pass,
-            resize_dimensions: None,
+        Self {
             start_instant: Instant::now(),
+            resize_dimensions: None,
+            vk_context,
+            queue_families_indices,
+            graphics_queue,
+            present_queue,
             swapchain,
-            swapchain_framebuffers,
-            swapchain_image_views,
             swapchain_khr,
             swapchain_properties: properties,
-            texture_image,
-            texture_image_memory,
-            texture_image_view,
-            texture_image_sampler,
-            depth_format,
-            depth_image,
-            depth_image_memory,
-            depth_image_view,
+            images,
+            swapchain_image_views,
+            render_pass,
+            descriptor_set_layout,
+            pipeline_layout: layout,
+            pipeline,
+            swapchain_framebuffers,
+            command_pool,
             transient_command_pool,
-            uniform_buffers,
-            uniform_buffer_memories,
+            depth_format,
+            depth_texture,
+            texture,
             vertex_buffer,
             vertex_buffer_memory,
-            vk_context,
+            index_buffer,
+            index_buffer_memory,
+            uniform_buffers,
+            uniform_buffer_memories,
+            descriptor_pool,
+            descriptor_sets,
+            command_buffers,
+            in_flight_frames,
         }
     }
 
@@ -408,6 +382,7 @@ impl Engine {
     fn cleanup_swapchain(&mut self) {
         let device = self.vk_context.device_ref();
         unsafe {
+            self.depth_texture.destroy(device);
             self.swapchain_framebuffers
                 .iter()
                 .for_each(|f| device.destroy_framebuffer(*f, None));
@@ -462,8 +437,7 @@ impl Engine {
         pool: DescriptorPool,
         layout: DescriptorSetLayout,
         uniform_buffers: &[Buffer],
-        image_view: ImageView,
-        sampler: Sampler,
+        texture: Texture,
     ) -> Vec<DescriptorSet> {
         let layouts = (0..uniform_buffers.len())
             .map(|_| layout)
@@ -488,8 +462,8 @@ impl Engine {
                 // Create the descriptor set for the image here
                 let image_info = DescriptorImageInfo::builder()
                     .image_layout(ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                    .image_view(image_view)
-                    .sampler(sampler)
+                    .image_view(texture.view)
+                    .sampler(texture.sampler.unwrap())
                     .build();
                 let image_infos = [image_info];
 
@@ -584,26 +558,12 @@ impl Engine {
         let (pipeline, layout) =
             Self::create_pipeline(&device, properties, render_pass, self.descriptor_set_layout);
 
-        let memory_properties = unsafe {
-            self.vk_context
-                .instance_ref()
-                .get_physical_device_memory_properties(self.physical_device)
-        };
-
-        let (depth_image, depth_image_memory, depth_image_view) = Self::create_depth_resources(
-            self.vk_context.device_ref(),
-            memory_properties,
-            self.command_pool,
-            self.graphics_queue,
-            self.depth_format,
-            properties.extent.width,
-            properties.extent.height,
-        );
+        let depth_texture = Self::create_depth_texture(&self.vk_context, self.command_pool, self.graphics_queue, self.depth_format, properties.extent);
 
         let swapchain_framebuffers = Self::create_framebuffers(
             device,
             &swapchain_image_views,
-            depth_image_view,
+            depth_texture,
             render_pass,
             properties,
         );
@@ -629,9 +589,6 @@ impl Engine {
         self.render_pass = render_pass;
         self.pipeline = pipeline;
         self.pipeline_layout = layout;
-        self.depth_image = depth_image;
-        self.depth_image_memory = depth_image_memory;
-        self.depth_image_view = depth_image_view;
         self.swapchain_framebuffers = swapchain_framebuffers;
         self.command_buffers = command_buffers;
     }
@@ -1223,13 +1180,13 @@ impl Engine {
     fn create_framebuffers(
         device: &Device,
         image_views: &[ImageView],
-        depth_image_view: vk::ImageView,
+        depth_texture: Texture,
         render_pass: RenderPass,
         swapchain_properties: SwapchainProperties,
     ) -> Vec<Framebuffer> {
         image_views
             .into_iter()
-            .map(|view| [*view, depth_image_view])
+            .map(|view| [*view, depth_texture.view])
             .map(|attachment| {
                 let framebuffer_info = FramebufferCreateInfo::builder()
                     .render_pass(render_pass)
@@ -1247,81 +1204,68 @@ impl Engine {
     }
 
     fn create_texture_image(
-        device: &Device,
-        device_mem_properties: PhysicalDeviceMemoryProperties,
+        vk_context: &VkContext,
         command_pool: CommandPool,
         copy_queue: Queue,
-    ) -> (Image, DeviceMemory) {
+    ) -> Texture {
         let image = image::open("assets/images/statue.jpg").unwrap();
         let image_as_rgb = image.to_rgba8();
-        let image_width = (&image_as_rgb).width();
-        let image_height = (&image_as_rgb).height();
+        let extent = vk::Extent2D {
+            width: (&image_as_rgb).width(),
+            height: (&image_as_rgb).height(),
+        };
         let pixels = image_as_rgb.into_raw();
-        let image_size = (pixels.len() * size_of::<u8>()) as DeviceSize;
+        let image_size = (pixels.len() * size_of::<u8>()) as vk::DeviceSize;
+        let device = vk_context.device_ref();
 
-        // Create a staging buffer here.
         let (buffer, memory, mem_size) = Self::create_buffer(
-            device,
-            device_mem_properties,
+            vk_context,
             image_size,
-            BufferUsageFlags::TRANSFER_SRC,
-            MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
+            vk::BufferUsageFlags::TRANSFER_SRC,
+            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
         );
 
         unsafe {
-            // Copy the data from the pixels we get from the image into our staging buffer
             let ptr = device
-                .map_memory(memory, 0, image_size, MemoryMapFlags::empty())
+                .map_memory(memory, 0, image_size, vk::MemoryMapFlags::empty())
                 .unwrap();
             let mut align = ash::util::Align::new(ptr, align_of::<u8>() as _, mem_size);
             align.copy_from_slice(&pixels);
             device.unmap_memory(memory);
         }
 
-        // Instead of storing the pixels into a buffer and accessing the buffer, create a
-        // vulkan image object which can access pixel data via texels.
         let (image, image_memory) = Self::create_image(
-            device,
-            device_mem_properties,
-            MemoryPropertyFlags::DEVICE_LOCAL,
-            image_width,
-            image_height,
-            Format::R8G8B8A8_UNORM,
-            ImageTiling::OPTIMAL,
-            ImageUsageFlags::TRANSFER_DST | ImageUsageFlags::SAMPLED,
+            vk_context,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            extent,
+            vk::Format::R8G8B8A8_UNORM,
+            vk::ImageTiling::OPTIMAL,
+            vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
         );
 
-        // Transition the image layout and copy the buffer into the image. Transation the layout
-        // again to be readable from the fragment shader for texture sampling.
+        // Transition the image layout and copy the buffer into the image
+        // and transition the layout again to be readable from fragment shader.
         {
             Self::transition_image_layout(
                 device,
                 command_pool,
                 copy_queue,
                 image,
-                Format::R8G8B8A8_UNORM,
-                ImageLayout::UNDEFINED,
-                ImageLayout::TRANSFER_DST_OPTIMAL,
+                vk::Format::R8G8B8A8_UNORM,
+                vk::ImageLayout::UNDEFINED,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             );
 
-            Self::copy_buffer_to_image(
-                device,
-                command_pool,
-                copy_queue,
-                buffer,
-                image,
-                image_width,
-                image_height,
-            );
+            Self::copy_buffer_to_image(device, command_pool, copy_queue, buffer, image, extent);
 
             Self::transition_image_layout(
                 device,
                 command_pool,
                 copy_queue,
                 image,
-                Format::R8G8B8A8_UNORM,
-                ImageLayout::TRANSFER_DST_OPTIMAL,
-                ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                vk::Format::R8G8B8A8_UNORM,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             );
         }
 
@@ -1329,7 +1273,37 @@ impl Engine {
             device.destroy_buffer(buffer, None);
             device.free_memory(memory, None);
         }
-        (image, image_memory)
+
+        let image_view = Self::create_image_view(
+            device,
+            image,
+            vk::Format::R8G8B8A8_UNORM,
+            vk::ImageAspectFlags::COLOR,
+        );
+
+        let sampler = {
+            let sampler_info = vk::SamplerCreateInfo::builder()
+                .mag_filter(vk::Filter::LINEAR)
+                .min_filter(vk::Filter::LINEAR)
+                .address_mode_u(vk::SamplerAddressMode::REPEAT)
+                .address_mode_v(vk::SamplerAddressMode::REPEAT)
+                .address_mode_w(vk::SamplerAddressMode::REPEAT)
+                .anisotropy_enable(true)
+                .max_anisotropy(16.0)
+                .border_color(vk::BorderColor::INT_OPAQUE_BLACK)
+                .unnormalized_coordinates(false)
+                .compare_enable(false)
+                .compare_op(vk::CompareOp::ALWAYS)
+                .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
+                .mip_lod_bias(0.0)
+                .min_lod(0.0)
+                .max_lod(0.0)
+                .build();
+
+            unsafe { device.create_sampler(&sampler_info, None).unwrap() }
+        };
+
+        Texture::new(image, image_memory, image_view, Some(sampler))
     }
 
     /// Creates an image with common properties
@@ -1338,11 +1312,9 @@ impl Engine {
     /// usage - Describes how the image will be used. Textures that need to be applied to the mesh
     /// will typically require that the image is destination & can be sampled by the shader.
     fn create_image(
-        device: &Device,
-        device_mem_properties: PhysicalDeviceMemoryProperties,
+        vk_context: &VkContext,
         mem_properties: MemoryPropertyFlags,
-        width: u32,
-        height: u32,
+        extent: Extent2D,
         format: Format,
         tiling: ImageTiling,
         usage: ImageUsageFlags,
@@ -1351,8 +1323,8 @@ impl Engine {
             // By declaring the image type as 2D, we access coordinates via x & y
             .image_type(ImageType::TYPE_2D)
             .extent(Extent3D {
-                width,
-                height,
+                width: extent.width,
+                height: extent.height,
                 depth: 1,
             })
             .mip_levels(1)
@@ -1370,12 +1342,12 @@ impl Engine {
             .flags(ImageCreateFlags::empty()) // TODO: Look into this when I want to use a terrain.
             .build();
 
-        let image = unsafe { device.create_image(&image_info, None).unwrap() };
+        let image = unsafe { vk_context.device_ref().create_image(&image_info, None).unwrap() };
 
         // Like a buffer we need to know what are the requirements for the image.
-        let mem_requirements = unsafe { device.get_image_memory_requirements(image) };
+        let mem_requirements = unsafe { vk_context.device_ref().get_image_memory_requirements(image) };
         let mem_type_index =
-            Self::find_memory_type(mem_requirements, device_mem_properties, mem_properties);
+            Self::find_memory_type(mem_requirements, vk_context.get_mem_properties(), mem_properties);
 
         let alloc_info = MemoryAllocateInfo::builder()
             .allocation_size(mem_requirements.size)
@@ -1383,8 +1355,8 @@ impl Engine {
             .build();
 
         let memory = unsafe {
-            let mem = device.allocate_memory(&alloc_info, None).unwrap();
-            device.bind_image_memory(image, mem, 0).unwrap();
+            let mem = vk_context.device_ref().allocate_memory(&alloc_info, None).unwrap();
+            vk_context.device_ref().bind_image_memory(image, mem, 0).unwrap();
             mem
         };
 
@@ -1476,8 +1448,7 @@ impl Engine {
         transition_queue: Queue,
         buffer: Buffer,
         image: Image,
-        width: u32,
-        height: u32,
+        extent: Extent2D
     ) {
         Self::execute_one_time_commands(device, command_pool, transition_queue, |command_buffer| {
             let region = BufferImageCopy::builder()
@@ -1492,8 +1463,8 @@ impl Engine {
                 })
                 .image_offset(Offset3D { x: 0, y: 0, z: 0 })
                 .image_extent(Extent3D {
-                    width,
-                    height,
+                    width: extent.width,
+                    height: extent.height,
                     depth: 1,
                 })
                 .build();
@@ -1542,30 +1513,25 @@ impl Engine {
     }
 
     fn create_vertex_buffer(
-        device: &Device,
-        mem_properties: PhysicalDeviceMemoryProperties,
+        vk_context: &VkContext,
         command_pool: CommandPool,
         transfer_queue: Queue,
     ) -> (Buffer, DeviceMemory) {
         Self::create_device_local_buffer_with_data::<u32, _>(
-            device,
-            mem_properties,
-            command_pool,
-            transfer_queue,
-            BufferUsageFlags::VERTEX_BUFFER,
-            &VERTICES,
-        )
+            vk_context, 
+            command_pool, 
+            transfer_queue, 
+            BufferUsageFlags::VERTEX_BUFFER, 
+            &VERTICES)
     }
 
     fn create_index_buffer(
-        device: &Device,
-        mem_properties: PhysicalDeviceMemoryProperties,
+        vk_context: &VkContext,
         command_pool: CommandPool,
         transfer_queue: Queue,
     ) -> (Buffer, DeviceMemory) {
         Self::create_device_local_buffer_with_data::<u16, _>(
-            device,
-            mem_properties,
+            vk_context,
             command_pool,
             transfer_queue,
             BufferUsageFlags::INDEX_BUFFER,
@@ -1574,8 +1540,7 @@ impl Engine {
     }
 
     fn create_device_local_buffer_with_data<A, T: Copy>(
-        device: &Device,
-        mem_properties: PhysicalDeviceMemoryProperties,
+        vk_context: &VkContext,
         command_pool: CommandPool,
         transfer_queue: Queue,
         usage: BufferUsageFlags,
@@ -1584,25 +1549,23 @@ impl Engine {
         let size = (data.len() * size_of::<T>()) as DeviceSize;
 
         let (staging_buffer, staging_memory, staging_mem_size) = Self::create_buffer(
-            device,
-            mem_properties,
+            vk_context,
             size,
             BufferUsageFlags::TRANSFER_SRC,
             MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
         );
 
         unsafe {
-            let data_ptr = device
+            let data_ptr = vk_context.device_ref()
                 .map_memory(staging_memory, 0, size, MemoryMapFlags::empty())
                 .unwrap();
             let mut align = Align::new(data_ptr, align_of::<A>() as _, staging_mem_size);
             align.copy_from_slice(data);
-            device.unmap_memory(staging_memory);
+            vk_context.device_ref().unmap_memory(staging_memory);
         };
 
         let (buffer, memory, _) = Self::create_buffer(
-            device,
-            mem_properties,
+            vk_context,
             size,
             BufferUsageFlags::TRANSFER_DST | usage,
             MemoryPropertyFlags::DEVICE_LOCAL,
@@ -1610,7 +1573,7 @@ impl Engine {
 
         // Copy from staging -> buffer - this will hold the Vertex data
         Self::copy_buffer(
-            device,
+            vk_context.device_ref(),
             command_pool,
             transfer_queue,
             staging_buffer,
@@ -1620,15 +1583,14 @@ impl Engine {
 
         // Clean up the staging buffer b/c we've already copied the data!
         unsafe {
-            device.destroy_buffer(staging_buffer, None);
-            device.free_memory(staging_memory, None);
+            vk_context.device_ref().destroy_buffer(staging_buffer, None);
+            vk_context.device_ref().free_memory(staging_memory, None);
         };
         (buffer, memory)
     }
 
     fn create_uniform_buffers(
-        device: &Device,
-        device_mem_properties: PhysicalDeviceMemoryProperties,
+        vk_context: &VkContext,
         count: usize,
     ) -> (Vec<vk::Buffer>, Vec<vk::DeviceMemory>) {
         let size = size_of::<UniformBufferObject>() as vk::DeviceSize;
@@ -1637,8 +1599,7 @@ impl Engine {
 
         for _ in 0..count {
             let (buffer, memory, _) = Self::create_buffer(
-                device,
-                device_mem_properties,
+                vk_context,
                 size,
                 vk::BufferUsageFlags::UNIFORM_BUFFER,
                 vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
@@ -1735,8 +1696,7 @@ impl Engine {
     /// The buffer, its memory and the actual size in bytes of the allocated memory since it may
     /// be different from the requested size.
     fn create_buffer(
-        device: &Device,
-        device_mem_properties: PhysicalDeviceMemoryProperties,
+        vk_context: &VkContext,
         size: DeviceSize,
         usage: BufferUsageFlags,
         mem_properties: MemoryPropertyFlags,
@@ -1748,57 +1708,23 @@ impl Engine {
                 .sharing_mode(SharingMode::EXCLUSIVE)
                 .build();
 
-            unsafe { device.create_buffer(&buffer_info, None).unwrap() }
+            unsafe { vk_context.device_ref().create_buffer(&buffer_info, None).unwrap() }
         };
 
-        let mem_requirements = unsafe { device.get_buffer_memory_requirements(buffer) };
+        let mem_requirements = unsafe { vk_context.device_ref().get_buffer_memory_requirements(buffer) };
         let memory = {
             let mem_type =
-                Self::find_memory_type(mem_requirements, device_mem_properties, mem_properties);
+                Self::find_memory_type(mem_requirements, vk_context.get_mem_properties(), mem_properties);
             let alloc_info = MemoryAllocateInfo::builder()
                 .allocation_size(mem_requirements.size)
                 .memory_type_index(mem_type)
                 .build();
 
-            unsafe { device.allocate_memory(&alloc_info, None).unwrap() }
+            unsafe { vk_context.device_ref().allocate_memory(&alloc_info, None).unwrap() }
         };
 
-        unsafe { device.bind_buffer_memory(buffer, memory, 0).unwrap() }
+        unsafe { vk_context.device_ref().bind_buffer_memory(buffer, memory, 0).unwrap() }
         (buffer, memory, mem_requirements.size)
-    }
-
-    fn create_depth_resources(
-        device: &Device,
-        device_mem_properties: PhysicalDeviceMemoryProperties,
-        command_pool: CommandPool,
-        transition_queue: Queue,
-        format: Format,
-        width: u32,
-        height: u32,
-    ) -> (Image, DeviceMemory, ImageView) {
-        let (image, mem) = Self::create_image(
-            device,
-            device_mem_properties,
-            MemoryPropertyFlags::DEVICE_LOCAL,
-            width,
-            height,
-            format,
-            ImageTiling::OPTIMAL,
-            ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
-        );
-
-        Self::transition_image_layout(
-            device,
-            command_pool,
-            transition_queue,
-            image,
-            format,
-            ImageLayout::UNDEFINED,
-            ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-        );
-
-        let view = Self::create_image_view(device, image, format, ImageAspectFlags::DEPTH);
-        (image, mem, view)
     }
 
     fn find_depth_format(instance: &Instance, device: PhysicalDevice) -> Format {
@@ -2026,19 +1952,52 @@ impl Engine {
         }
         InFlightFrames::new(sync_objects_vec)
     }
+
+    /// Create the depth buffer texture (image, memory and view).
+    ///
+    /// This function also transitions the image to be ready to be used
+    /// as a depth/stencil attachement.
+    fn create_depth_texture(
+        vk_context: &VkContext,
+        command_pool: vk::CommandPool,
+        transition_queue: vk::Queue,
+        format: vk::Format,
+        extent: vk::Extent2D,
+    ) -> Texture {
+        let (image, mem) = Self::create_image(
+            vk_context,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            extent,
+            format,
+            vk::ImageTiling::OPTIMAL,
+            vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
+        );
+
+        let device = vk_context.device_ref();
+        Self::transition_image_layout(
+            device,
+            command_pool,
+            transition_queue,
+            image,
+            format,
+            vk::ImageLayout::UNDEFINED,
+            vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        );
+
+        let view = Self::create_image_view(device, image, format, vk::ImageAspectFlags::DEPTH);
+
+        Texture::new(image, mem, view, None)
+    }
 }
 
 impl Drop for Engine {
     fn drop(&mut self) {
-        log::info!("Releasing engine.");
+        log::debug!("Releasin engine.");
         self.cleanup_swapchain();
 
         let device = self.vk_context.device_ref();
-        self.in_flight_frames.destroy(self.vk_context.device_ref());
+        self.in_flight_frames.destroy(device);
         unsafe {
-            device.destroy_image_view(self.depth_image_view, None);
-            device.destroy_image(self.depth_image, None);
-            device.free_memory(self.depth_image_memory, None);
             device.destroy_descriptor_pool(self.descriptor_pool, None);
             device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
             self.uniform_buffer_memories
@@ -2047,23 +2006,13 @@ impl Drop for Engine {
             self.uniform_buffers
                 .iter()
                 .for_each(|b| device.destroy_buffer(*b, None));
-
-            log::debug!("Freeing index buffer memory...");
             device.free_memory(self.index_buffer_memory, None);
             device.destroy_buffer(self.index_buffer, None);
-
-            log::debug!("Freeing vertex buffer memory...");
             device.destroy_buffer(self.vertex_buffer, None);
             device.free_memory(self.vertex_buffer_memory, None);
-
-            device.destroy_image(self.texture_image, None);
-            device.destroy_image_view(self.texture_image_view, None);
-            device.free_memory(self.texture_image_memory, None);
-            device.destroy_sampler(self.texture_image_sampler, None);
-
-            log::debug!("Cleaning up CommandPool...");
-            device.destroy_command_pool(self.command_pool, None);
+            self.texture.destroy(device);
             device.destroy_command_pool(self.transient_command_pool, None);
+            device.destroy_command_pool(self.command_pool, None);
         }
     }
 }
