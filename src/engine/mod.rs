@@ -9,16 +9,16 @@ use ash::{
     util::Align,
     vk::{
         self, AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference,
-        AttachmentStoreOp, BlendFactor, BlendOp, BorderColor, Buffer, BufferCopy, BufferCreateInfo,
+        AttachmentStoreOp, BlendFactor, BlendOp, Buffer, BufferCopy, BufferCreateInfo,
         BufferImageCopy, BufferUsageFlags, ClearColorValue, ClearDepthStencilValue, ClearValue,
         ColorComponentFlags, CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo,
         CommandBufferLevel, CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags,
-        CommandPoolCreateInfo, CompareOp, CompositeAlphaFlagsKHR, CullModeFlags, DependencyFlags,
+        CommandPoolCreateInfo, CompositeAlphaFlagsKHR, CullModeFlags, DependencyFlags,
         DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize,
         DescriptorSet, DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding,
         DescriptorSetLayoutCreateInfo, DescriptorType, DeviceCreateInfo, DeviceMemory,
-        DeviceQueueCreateInfo, DeviceSize, Extent3D, Fence, FenceCreateFlags, FenceCreateInfo,
-        Filter, Format, FormatFeatureFlags, Framebuffer, FramebufferCreateInfo, FrontFace,
+        DeviceQueueCreateInfo, DeviceSize, Extent2D, Extent3D, Fence, FenceCreateFlags,
+        FenceCreateInfo, Format, FormatFeatureFlags, Framebuffer, FramebufferCreateInfo, FrontFace,
         GraphicsPipelineCreateInfo, Image, ImageAspectFlags, ImageCreateFlags, ImageCreateInfo,
         ImageLayout, ImageMemoryBarrier, ImageSubresourceLayers, ImageSubresourceRange,
         ImageTiling, ImageType, ImageUsageFlags, ImageView, ImageViewCreateInfo, ImageViewType,
@@ -30,15 +30,14 @@ use ash::{
         PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo,
         PipelineShaderStageCreateInfo, PipelineStageFlags, PipelineVertexInputStateCreateInfo,
         PipelineViewportStateCreateInfo, PolygonMode, PrimitiveTopology, Queue, QueueFlags, Rect2D,
-        RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags, Sampler,
-        SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode, SemaphoreCreateInfo,
-        ShaderStageFlags, SharingMode, SubmitInfo, SubpassContents, SubpassDependency,
-        SubpassDescription, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR, Viewport,
-        WriteDescriptorSet, QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL, TRUE, Extent2D,
+        RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags,
+        SemaphoreCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo, SubpassContents,
+        SubpassDependency, SubpassDescription, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR,
+        Viewport, WriteDescriptorSet, QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL, TRUE,
     },
     Device, Entry, Instance,
 };
-use cgmath::{Point3, Matrix4, Deg, Vector3};
+use cgmath::{Deg, Matrix4, Point3, Vector3};
 
 use std::{
     ffi::{CStr, CString},
@@ -52,9 +51,9 @@ pub mod context;
 pub mod debug;
 pub mod render;
 pub mod shader_utils;
+pub mod texture;
 pub mod uniform_buffer_object;
 pub mod utils;
-pub mod texture;
 
 use context::VkContext;
 use debug::{
@@ -62,9 +61,12 @@ use debug::{
 };
 use utils::QueueFamiliesIndices;
 
-use self::{render::{INDICES, VERTICES}, texture::Texture};
 use self::uniform_buffer_object::UniformBufferObject;
 use self::utils::{InFlightFrames, SyncObjects};
+use self::{
+    render::{INDICES, VERTICES},
+    texture::Texture,
+};
 use self::{shader_utils::create_shader_module, utils::SwapchainProperties};
 use crate::{common::HEIGHT, engine::utils::SwapchainSupportDetails, WIDTH};
 
@@ -85,7 +87,7 @@ pub struct Engine {
     queue_families_indices: QueueFamiliesIndices,
     render_pass: RenderPass,
     resize_dimensions: Option<[u32; 2]>,
-    start_instant: Instant,
+    _start_instant: Instant,
     swapchain: Swapchain,
     swapchain_framebuffers: Vec<Framebuffer>,
     swapchain_image_views: Vec<ImageView>,
@@ -114,9 +116,6 @@ impl Engine {
 
         let (physical_device, queue_families_indices) =
             Self::pick_physical_device(&instance, &surface, surface_khr);
-
-        let memory_properties =
-            unsafe { instance.get_physical_device_memory_properties(physical_device) };
 
         let (logical_device, graphics_queue, present_queue) =
             Self::create_logical_device_with_graphics_queue(
@@ -167,11 +166,12 @@ impl Engine {
         );
 
         let depth_texture = Self::create_depth_texture(
-            &vk_context, 
-            command_pool, 
-            graphics_queue, 
-            depth_format, 
-            properties.extent);
+            &vk_context,
+            command_pool,
+            graphics_queue,
+            depth_format,
+            properties.extent,
+        );
 
         let swapchain_framebuffers = Self::create_framebuffers(
             vk_context.device_ref(),
@@ -183,17 +183,11 @@ impl Engine {
 
         let texture = Self::create_texture_image(&vk_context, command_pool, graphics_queue);
 
-        let (vertex_buffer, vertex_buffer_memory) = Self::create_vertex_buffer(
-            &vk_context,
-            transient_command_pool,
-            graphics_queue,
-        );
+        let (vertex_buffer, vertex_buffer_memory) =
+            Self::create_vertex_buffer(&vk_context, transient_command_pool, graphics_queue);
 
-        let (index_buffer, index_buffer_memory) = Self::create_index_buffer(
-            &vk_context,
-            transient_command_pool,
-            graphics_queue,
-        );
+        let (index_buffer, index_buffer_memory) =
+            Self::create_index_buffer(&vk_context, transient_command_pool, graphics_queue);
 
         let (uniform_buffers, uniform_buffer_memories) =
             Self::create_uniform_buffers(&vk_context, images.len());
@@ -224,7 +218,7 @@ impl Engine {
         let in_flight_frames = Self::create_sync_objects(vk_context.device_ref());
 
         Self {
-            start_instant: Instant::now(),
+            _start_instant: Instant::now(),
             resize_dimensions: None,
             vk_context,
             queue_families_indices,
@@ -493,20 +487,20 @@ impl Engine {
     }
 
     fn update_uniform_buffers(&mut self, current_image: u32) {
-        let elapsed = self.start_instant.elapsed();
-        let elapsed = elapsed.as_secs() as f32 + (elapsed.subsec_millis() as f32) / 1_000 as f32;
+        // let elapsed = self._start_instant.elapsed();
+        // let elapsed = elapsed.as_secs() as f32 + (elapsed.subsec_millis() as f32) / 1_000 as f32;
         let elapsed = 1.0;
 
         let aspect = self.swapchain_properties.extent.width as f32
             / self.swapchain_properties.extent.height as f32;
         let ubo = UniformBufferObject {
-            model: Matrix4::from_angle_z(Deg(90.0 * elapsed)),
-            view: Matrix4::look_at(
+            model: Matrix4::from_angle_y(Deg(00.0 * elapsed)),
+            view: Matrix4::look_at_rh(
                 Point3::new(2.0, 2.0, 2.0),
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
             ),
-            proj: cgmath::perspective(Deg(45.0), aspect, 0.1, 10.0),
+            proj: cgmath::perspective(Deg(60.0), aspect, 0.1, 10.0),
         };
 
         let ubos = [ubo];
@@ -558,7 +552,13 @@ impl Engine {
         let (pipeline, layout) =
             Self::create_pipeline(&device, properties, render_pass, self.descriptor_set_layout);
 
-        let depth_texture = Self::create_depth_texture(&self.vk_context, self.command_pool, self.graphics_queue, self.depth_format, properties.extent);
+        let depth_texture = Self::create_depth_texture(
+            &self.vk_context,
+            self.command_pool,
+            self.graphics_queue,
+            self.depth_format,
+            properties.extent,
+        );
 
         let swapchain_framebuffers = Self::create_framebuffers(
             device,
@@ -589,6 +589,7 @@ impl Engine {
         self.render_pass = render_pass;
         self.pipeline = pipeline;
         self.pipeline_layout = layout;
+        self.depth_texture = depth_texture;
         self.swapchain_framebuffers = swapchain_framebuffers;
         self.command_buffers = command_buffers;
     }
@@ -1342,12 +1343,21 @@ impl Engine {
             .flags(ImageCreateFlags::empty()) // TODO: Look into this when I want to use a terrain.
             .build();
 
-        let image = unsafe { vk_context.device_ref().create_image(&image_info, None).unwrap() };
+        let image = unsafe {
+            vk_context
+                .device_ref()
+                .create_image(&image_info, None)
+                .unwrap()
+        };
 
         // Like a buffer we need to know what are the requirements for the image.
-        let mem_requirements = unsafe { vk_context.device_ref().get_image_memory_requirements(image) };
-        let mem_type_index =
-            Self::find_memory_type(mem_requirements, vk_context.get_mem_properties(), mem_properties);
+        let mem_requirements =
+            unsafe { vk_context.device_ref().get_image_memory_requirements(image) };
+        let mem_type_index = Self::find_memory_type(
+            mem_requirements,
+            vk_context.get_mem_properties(),
+            mem_properties,
+        );
 
         let alloc_info = MemoryAllocateInfo::builder()
             .allocation_size(mem_requirements.size)
@@ -1355,8 +1365,14 @@ impl Engine {
             .build();
 
         let memory = unsafe {
-            let mem = vk_context.device_ref().allocate_memory(&alloc_info, None).unwrap();
-            vk_context.device_ref().bind_image_memory(image, mem, 0).unwrap();
+            let mem = vk_context
+                .device_ref()
+                .allocate_memory(&alloc_info, None)
+                .unwrap();
+            vk_context
+                .device_ref()
+                .bind_image_memory(image, mem, 0)
+                .unwrap();
             mem
         };
 
@@ -1448,7 +1464,7 @@ impl Engine {
         transition_queue: Queue,
         buffer: Buffer,
         image: Image,
-        extent: Extent2D
+        extent: Extent2D,
     ) {
         Self::execute_one_time_commands(device, command_pool, transition_queue, |command_buffer| {
             let region = BufferImageCopy::builder()
@@ -1482,47 +1498,18 @@ impl Engine {
         });
     }
 
-    fn create_texture_image_view(device: &Device, image: Image) -> ImageView {
-        Self::create_image_view(
-            device,
-            image,
-            Format::R8G8B8A8_UNORM,
-            ImageAspectFlags::COLOR,
-        )
-    }
-
-    fn create_texture_sampler(device: &Device) -> Sampler {
-        let sampler_info = SamplerCreateInfo::builder()
-            .mag_filter(Filter::LINEAR)
-            .min_filter(Filter::LINEAR)
-            .address_mode_u(SamplerAddressMode::REPEAT)
-            .address_mode_v(SamplerAddressMode::REPEAT)
-            .address_mode_w(SamplerAddressMode::REPEAT)
-            .anisotropy_enable(true)
-            .max_anisotropy(16.0)
-            .border_color(BorderColor::INT_OPAQUE_BLACK)
-            .unnormalized_coordinates(false)
-            .compare_enable(false)
-            .compare_op(CompareOp::ALWAYS)
-            .mipmap_mode(SamplerMipmapMode::LINEAR)
-            .min_lod(0.0)
-            .max_lod(0.0)
-            .build();
-
-        unsafe { device.create_sampler(&sampler_info, None).unwrap() }
-    }
-
     fn create_vertex_buffer(
         vk_context: &VkContext,
         command_pool: CommandPool,
         transfer_queue: Queue,
     ) -> (Buffer, DeviceMemory) {
         Self::create_device_local_buffer_with_data::<u32, _>(
-            vk_context, 
-            command_pool, 
-            transfer_queue, 
-            BufferUsageFlags::VERTEX_BUFFER, 
-            &VERTICES)
+            vk_context,
+            command_pool,
+            transfer_queue,
+            BufferUsageFlags::VERTEX_BUFFER,
+            &VERTICES,
+        )
     }
 
     fn create_index_buffer(
@@ -1556,7 +1543,8 @@ impl Engine {
         );
 
         unsafe {
-            let data_ptr = vk_context.device_ref()
+            let data_ptr = vk_context
+                .device_ref()
                 .map_memory(staging_memory, 0, size, MemoryMapFlags::empty())
                 .unwrap();
             let mut align = Align::new(data_ptr, align_of::<A>() as _, staging_mem_size);
@@ -1708,22 +1696,44 @@ impl Engine {
                 .sharing_mode(SharingMode::EXCLUSIVE)
                 .build();
 
-            unsafe { vk_context.device_ref().create_buffer(&buffer_info, None).unwrap() }
+            unsafe {
+                vk_context
+                    .device_ref()
+                    .create_buffer(&buffer_info, None)
+                    .unwrap()
+            }
         };
 
-        let mem_requirements = unsafe { vk_context.device_ref().get_buffer_memory_requirements(buffer) };
+        let mem_requirements = unsafe {
+            vk_context
+                .device_ref()
+                .get_buffer_memory_requirements(buffer)
+        };
         let memory = {
-            let mem_type =
-                Self::find_memory_type(mem_requirements, vk_context.get_mem_properties(), mem_properties);
+            let mem_type = Self::find_memory_type(
+                mem_requirements,
+                vk_context.get_mem_properties(),
+                mem_properties,
+            );
             let alloc_info = MemoryAllocateInfo::builder()
                 .allocation_size(mem_requirements.size)
                 .memory_type_index(mem_type)
                 .build();
 
-            unsafe { vk_context.device_ref().allocate_memory(&alloc_info, None).unwrap() }
+            unsafe {
+                vk_context
+                    .device_ref()
+                    .allocate_memory(&alloc_info, None)
+                    .unwrap()
+            }
         };
 
-        unsafe { vk_context.device_ref().bind_buffer_memory(buffer, memory, 0).unwrap() }
+        unsafe {
+            vk_context
+                .device_ref()
+                .bind_buffer_memory(buffer, memory, 0)
+                .unwrap()
+        }
         (buffer, memory, mem_requirements.size)
     }
 
@@ -1992,7 +2002,7 @@ impl Engine {
 
 impl Drop for Engine {
     fn drop(&mut self) {
-        log::debug!("Releasin engine.");
+        log::debug!("Releasing engine.");
         self.cleanup_swapchain();
 
         let device = self.vk_context.device_ref();
