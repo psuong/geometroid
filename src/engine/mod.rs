@@ -10,12 +10,12 @@ use ash::{
     vk::{
         self, AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference,
         AttachmentStoreOp, BlendFactor, BlendOp, BorderColor, Buffer, BufferCopy, BufferCreateInfo,
-        BufferImageCopy, BufferUsageFlags, ClearColorValue, ClearValue, ColorComponentFlags,
-        CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel,
-        CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo,
-        CompareOp, CompositeAlphaFlagsKHR, CullModeFlags, DependencyFlags, DescriptorImageInfo,
-        DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize, DescriptorSet,
-        DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding,
+        BufferImageCopy, BufferUsageFlags, ClearColorValue, ClearDepthStencilValue, ClearValue,
+        ColorComponentFlags, CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo,
+        CommandBufferLevel, CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags,
+        CommandPoolCreateInfo, CompareOp, CompositeAlphaFlagsKHR, CullModeFlags, DependencyFlags,
+        DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize,
+        DescriptorSet, DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding,
         DescriptorSetLayoutCreateInfo, DescriptorType, DeviceCreateInfo, DeviceMemory,
         DeviceQueueCreateInfo, DeviceSize, Extent3D, Fence, FenceCreateFlags, FenceCreateInfo,
         Filter, Format, FormatFeatureFlags, Framebuffer, FramebufferCreateInfo, FrontFace,
@@ -34,7 +34,7 @@ use ash::{
         SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode, SemaphoreCreateInfo,
         ShaderStageFlags, SharingMode, SubmitInfo, SubpassContents, SubpassDependency,
         SubpassDescription, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR, Viewport,
-        WriteDescriptorSet, QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL, TRUE, ClearDepthStencilValue
+        WriteDescriptorSet, QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL, TRUE,
     },
     Device, Entry, Instance,
 };
@@ -584,17 +584,20 @@ impl Engine {
             Self::create_pipeline(&device, properties, render_pass, self.descriptor_set_layout);
 
         let memory_properties = unsafe {
-            self.vk_context.instance_ref().get_physical_device_memory_properties(self.physical_device)
+            self.vk_context
+                .instance_ref()
+                .get_physical_device_memory_properties(self.physical_device)
         };
 
         let (depth_image, depth_image_memory, depth_image_view) = Self::create_depth_resources(
-            self.vk_context.device_ref(), 
-            memory_properties, 
-            self.command_pool, 
-            self.graphics_queue, 
-            self.depth_format, 
-            properties.extent.width, 
-            properties.extent.height);
+            self.vk_context.device_ref(),
+            memory_properties,
+            self.command_pool,
+            self.graphics_queue,
+            self.depth_format,
+            properties.extent.width,
+            properties.extent.height,
+        );
 
         let swapchain_framebuffers = Self::create_framebuffers(
             device,
@@ -1827,8 +1830,9 @@ impl Engine {
 
             if tiling == ImageTiling::LINEAR && props.linear_tiling_features.contains(features) {
                 true
-            } else if tiling == ImageTiling::OPTIMAL &&
-                props.optimal_tiling_features.contains(features) {
+            } else if tiling == ImageTiling::OPTIMAL
+                && props.optimal_tiling_features.contains(features)
+            {
                 true
             } else {
                 false
@@ -1923,8 +1927,8 @@ impl Engine {
                     ClearValue {
                         color: ClearColorValue {
                             float32: [0.0, 0.0, 0.0, 1.0],
-                        }
-                    }, 
+                        },
+                    },
                     ClearValue {
                         depth_stencil: ClearDepthStencilValue {
                             depth: 1.0,
