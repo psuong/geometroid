@@ -38,8 +38,8 @@ use ash::{
     },
     Device, Entry, Instance,
 };
+use cgmath::{Point3, Matrix4, Deg, Vector3};
 
-use glam::{Mat4, Vec3};
 use std::{
     ffi::{CStr, CString},
     mem::{align_of, size_of},
@@ -521,17 +521,18 @@ impl Engine {
     fn update_uniform_buffers(&mut self, current_image: u32) {
         let elapsed = self.start_instant.elapsed();
         let elapsed = elapsed.as_secs() as f32 + (elapsed.subsec_millis() as f32) / 1_000 as f32;
+        let elapsed = 1.0;
 
         let aspect = self.swapchain_properties.extent.width as f32
             / self.swapchain_properties.extent.height as f32;
         let ubo = UniformBufferObject {
-            model: Mat4::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), (90.0 * elapsed).to_radians()),
-            view: Mat4::look_at_lh(
-                Vec3::new(2.0, 2.0, 2.0),
-                Vec3::new(0.0, 0.0, 0.0),
-                Vec3::new(0.0, 0.0, 1.0),
+            model: Matrix4::from_angle_z(Deg(90.0 * elapsed)),
+            view: Matrix4::look_at(
+                Point3::new(2.0, 2.0, 2.0),
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
             ),
-            proj: Mat4::perspective_lh((120.0 as f32).to_radians(), aspect, 0.1, 10.0),
+            proj: cgmath::perspective(Deg(45.0), aspect, 0.1, 10.0),
         };
 
         let ubos = [ubo];

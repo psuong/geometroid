@@ -3,51 +3,51 @@ use std::mem;
 use ash::vk::{
     Format, VertexInputAttributeDescription, VertexInputBindingDescription, VertexInputRate,
 };
-use glam::{const_vec2, const_vec3, Vec2, Vec3};
+use cgmath::{vec2, vec3, Vector3, Vector2};
 use memoffset::offset_of;
 
 pub const VERTICES: [Vertex; 8] = [
     // First quad
     Vertex {
-        position: const_vec3!([-0.5, -0.5, 0.0]),
-        color: const_vec3!([1.0, 1.0, 1.0]),
-        coordinates: const_vec2!([0.0, 0.0])
+        position: vec3(-0.5, -0.5, 0.0),
+        color: vec3(1.0, 1.0, 1.0),
+        uv: vec2(0.0, 0.0),
     },
     Vertex {
-        position: const_vec3!([-0.5, 0.5, 0.0]),
-        color: const_vec3!([1.0, 1.0, 1.0]),
-        coordinates: const_vec2!([0.0, 1.0])
+        position: vec3(0.5, -0.5, 0.0),
+        color: vec3(1.0, 1.0, 1.0),
+        uv: vec2(1.0, 0.0),
     },
     Vertex {
-        position: const_vec3!([0.5, 0.5, 0.0]),
-        color: const_vec3!([1.0, 1.0, 1.0]),
-        coordinates: const_vec2!([1.0, 1.0])
+        position: vec3(0.5, 0.5, 0.0),
+        color: vec3(1.0, 1.0, 1.0),
+        uv: vec2(1.0, 1.0),
     },
     Vertex {
-        position: const_vec3!([0.5, -0.5, 0.0]),
-        color: const_vec3!([1.0, 1.0, 1.0]),
-        coordinates: const_vec2!([1.0, 0.0])
+        position: vec3(-0.5, 0.5, 0.0),
+        color: vec3(1.0, 1.0, 1.0),
+        uv: vec2(0.0, 1.0),
     },
     // Second quad
     Vertex {
-        position: const_vec3!([-0.5, -0.5, -0.5]),
-        color: const_vec3!([1.0, 1.0, 1.0]),
-        coordinates: const_vec2!([0.0, 0.0])
+        position: vec3(-0.5, -0.5, -0.5),
+        color: vec3(1.0, 1.0, 1.0),
+        uv: vec2(0.0, 0.0),
     },
     Vertex {
-        position: const_vec3!([-0.5, 0.5, -0.5]),
-        color: const_vec3!([1.0, 1.0, 1.0]),
-        coordinates: const_vec2!([0.0, 1.0])
+        position: vec3(0.5, -0.5, -0.5),
+        color: vec3(1.0, 1.0, 1.0),
+        uv: vec2(1.0, 0.0),
     },
     Vertex {
-        position: const_vec3!([0.5, 0.5, -0.5]),
-        color: const_vec3!([1.0, 1.0, 1.0]),
-        coordinates: const_vec2!([1.0, 1.0])
+        position: vec3(0.5, 0.5, -0.5),
+        color: vec3(1.0, 1.0, 1.0),
+        uv: vec2(1.0, 1.0),
     },
     Vertex {
-        position: const_vec3!([0.5, -0.5, -0.5]),
-        color: const_vec3!([1.0, 1.0, 1.0]),
-        coordinates: const_vec2!([1.0, 0.0])
+        position: vec3(-0.5, 0.5, -0.5),
+        color: vec3(1.0, 1.0, 1.0),
+        uv: vec2(0.0, 1.0),
     },
 ];
 
@@ -56,9 +56,9 @@ pub const INDICES: [u16; 12] = [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7];
 
 #[derive(Copy, Clone)]
 pub struct Vertex {
-    pub position: Vec3,
-    pub color: Vec3,
-    pub coordinates: Vec2,
+    pub position: Vector3<f32>,
+    pub color: Vector3<f32>,
+    pub uv: Vector2<f32>,
 }
 
 impl Vertex {
@@ -98,7 +98,7 @@ impl Vertex {
             .binding(0)
             .location(2)
             .format(Format::R32G32B32_SFLOAT)
-            .offset(offset_of!(Vertex, coordinates) as u32)
+            .offset(offset_of!(Vertex, uv) as u32)
             .build();
 
         [position_desc, color_desc, tex_coord_desc]
