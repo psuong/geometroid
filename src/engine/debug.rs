@@ -5,8 +5,8 @@ use ash::{
     vk::{
         self, DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageSeverityFlagsEXT as SeverityFlag,
         DebugUtilsMessageTypeFlagsEXT, DebugUtilsMessageTypeFlagsEXT as TypeFlag,
-        DebugUtilsMessengerCallbackDataEXT, DebugUtilsMessengerCreateFlagsEXT,
-        DebugUtilsMessengerCreateInfoEXT, DebugUtilsMessengerEXT,
+        DebugUtilsMessengerCallbackDataEXT, DebugUtilsMessengerCreateInfoEXT,
+        DebugUtilsMessengerEXT,
     },
     Entry, Instance,
 };
@@ -44,9 +44,16 @@ pub fn setup_debug_messenger(
     }
 
     let create_info = DebugUtilsMessengerCreateInfoEXT::builder()
-        .flags(DebugUtilsMessengerCreateFlagsEXT::all())
-        .message_severity(DebugUtilsMessageSeverityFlagsEXT::all())
-        .message_type(DebugUtilsMessageTypeFlagsEXT::all())
+        .message_severity(
+            DebugUtilsMessageSeverityFlagsEXT::ERROR
+                | DebugUtilsMessageSeverityFlagsEXT::INFO
+                | DebugUtilsMessageSeverityFlagsEXT::WARNING,
+        )
+        .message_type(
+            DebugUtilsMessageTypeFlagsEXT::GENERAL
+                | DebugUtilsMessageTypeFlagsEXT::PERFORMANCE
+                | DebugUtilsMessageTypeFlagsEXT::VALIDATION,
+        )
         .pfn_user_callback(Some(vulkan_debug_callback))
         .build();
 

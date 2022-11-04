@@ -1,15 +1,23 @@
-use ash::{vk::{Image, DeviceMemory, ImageView, Sampler}, Device};
+use ash::{
+    vk::{DeviceMemory, Image, ImageView, Sampler},
+    Device,
+};
 
 #[derive(Clone, Copy)]
 pub struct Texture {
     pub image: Image,
     pub memory: DeviceMemory,
     pub view: ImageView,
-    pub sampler: Option<Sampler>
+    pub sampler: Option<Sampler>,
 }
 
 impl Texture {
-    pub fn new(image: Image, memory: DeviceMemory, view: ImageView, sampler: Option<Sampler>) -> Self {
+    pub fn new(
+        image: Image,
+        memory: DeviceMemory,
+        view: ImageView,
+        sampler: Option<Sampler>,
+    ) -> Self {
         Texture {
             image,
             memory,

@@ -38,6 +38,7 @@ use ash::{
     Device, Entry, Instance,
 };
 use cgmath::{Deg, Matrix4, Point3, Vector3};
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 
 use std::{
     ffi::{CStr, CString},
@@ -106,13 +107,21 @@ pub struct Engine {
 
 impl Engine {
     pub fn new(window: &Window) -> Self {
-        let entry = unsafe { Entry::new().expect("Failed to create entry") };
+        let entry = unsafe { Entry::load().unwrap() };
         let instance = Self::create_instance(&entry);
         let debug_report_callback = setup_debug_messenger(&entry, &instance);
 
         let surface = Surface::new(&entry, &instance);
-        let surface_khr =
-            unsafe { ash_window::create_surface(&entry, &instance, window, None).unwrap() };
+        let surface_khr = unsafe {
+            ash_window::create_surface(
+                &entry,
+                &instance,
+                window.raw_display_handle(),
+                window.raw_window_handle(),
+                None,
+            )
+            .unwrap()
+        };
 
         let (physical_device, queue_families_indices) =
             Self::pick_physical_device(&instance, &surface, surface_khr);
@@ -1042,7 +1051,7 @@ impl Engine {
             .build();
 
         let color_blending_attachment = PipelineColorBlendAttachmentState::builder()
-            .color_write_mask(ColorComponentFlags::all())
+            .color_write_mask(ColorComponentFlags::RGBA)
             .blend_enable(false)
             .src_color_blend_factor(BlendFactor::ONE)
             .dst_color_blend_factor(BlendFactor::ZERO)
