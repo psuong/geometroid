@@ -957,8 +957,13 @@ impl Engine {
         render_pass: RenderPass,
         descriptor_set_layout: DescriptorSetLayout,
     ) -> (Pipeline, PipelineLayout) {
-        let vert_source = read_shader_from_file("src/shaders/shader.vert.spv");
-        let frag_source = read_shader_from_file("src/shaders/shader.frag.spv");
+        let current_dir = std::env::current_dir().unwrap();
+        log::info!("Current directory: {:?}", current_dir);
+
+        let vert_path = current_dir.join("assets/shaders/shader.vert.spv");
+        let vert_source = read_shader_from_file(vert_path);
+        let frag_path = current_dir.join("assets/shaders/shader.frag.spv");
+        let frag_source = read_shader_from_file(frag_path);
 
         let vertex_shader_module = create_shader_module(device, &vert_source);
         let fragment_shader_module = create_shader_module(device, &frag_source);

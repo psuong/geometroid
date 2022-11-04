@@ -20,7 +20,7 @@ impl Source {
     }
 
     pub fn shader_src(&self) -> PathBuf {
-        let path = self.root.clone().join("src").join("shaders");
+        let path = self.root.clone().join("assets").join("shaders");
         path
     }
 }
@@ -56,6 +56,10 @@ fn main() {
 
             handle_shader_result(source.shader_log.clone(), result, &mut log_messages);
         });
+
+    let current_dir = std::env::current_dir();
+    log_messages.push(format!("Current build dir: {:?}", current_dir));
+    log_messages.push(std::env::var("OUT_DIR").unwrap());
 
     match write_messages_to_file(source.shader_log.clone(), &log_messages) {
         _ => {}
