@@ -37,14 +37,15 @@ use ash::{
     },
     Device, Entry, Instance,
 };
-use cgmath::{Deg, Matrix4, Point3, Vector3};
+use cgmath::{Deg, Matrix4, Point3, Vector3, vec3, vec2};
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use tobj::LoadOptions;
 
 use std::{
     ffi::{CStr, CString},
     mem::{align_of, size_of},
     panic,
-    time::Instant,
+    time::Instant, path::Path,
 };
 use winit::window::Window;
 
@@ -1220,7 +1221,7 @@ impl Engine {
         command_pool: CommandPool,
         copy_queue: Queue,
     ) -> Texture {
-        let image = image::open("assets/images/statue.jpg").unwrap();
+        let image = image::open("assets/textures/statue.jpg").unwrap();
         let image_as_rgb = image.to_rgba8();
         let extent = vk::Extent2D {
             width: (&image_as_rgb).width(),
@@ -2008,6 +2009,33 @@ impl Engine {
         let view = Self::create_image_view(device, image, format, vk::ImageAspectFlags::DEPTH);
 
         Texture::new(image, mem, view, None)
+    }
+
+    fn load_model() -> (Vec<Vertex> , Vec<u32>) {
+        log::debug!("Loading model...");
+        let (models, _) = tobj::load_obj(&Path::new("models/viking.obj"), &tobj::LoadOptions::default()).unwrap();
+        let mesh = &models[0].mesh;
+        let positions = mesh.positions.as_slice();
+        let coords = mesh.texcoords.as_slice();
+        let vertex_count = mesh.positions.len() / 3;
+
+        let mut vertices = Vec::with_capacity(vertex_count);
+        for i in 0..vertex_count {
+            let x = positions[i * 3];
+            let y = positions[i * 3 + 1];
+            let z = positions[i * 3 + 2];
+            let u = coords[i * 2];
+            let v = coords[i * 2 + 1];
+
+            let vertex = Vertex {
+                position: vec3(x, y, z),
+                uv: vec2(u, v),
+                color: vec3(1.0, 1.0, 1.0)
+            };
+            vertices.push(vertex);
+        }
+
+        (vertices, mesh.indices.clone())
     }
 }
 
