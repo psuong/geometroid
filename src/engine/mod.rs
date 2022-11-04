@@ -785,6 +785,7 @@ impl Engine {
         (device, graphics_queue, present_queue)
     }
 
+    // TODO: Add ash::vk::KhrMaintenance1Fn::name()
     fn get_required_device_extensions() -> [&'static CStr; 1] {
         [Swapchain::name()]
     }
@@ -977,11 +978,12 @@ impl Engine {
             .primitive_restart_enable(false)
             .build();
 
+        // TODO: Flip the viewport b/c I'm more familiar with OpenGL instead
         let viewport = Viewport {
             x: 0.0,
             y: 0.0,
             width: swapchain_properties.extent.width as _,
-            height: swapchain_properties.extent.height as _,
+            height: swapchain_properties.extent.height as i32 as _,
             min_depth: 0.0,
             max_depth: 1.0,
         };

@@ -30,22 +30,22 @@ pub const VERTICES: [Vertex; 8] = [
     },
     // Second quad
     Vertex {
-        position: vec3(-0.5, -0.5, 0.5),
+        position: vec3(-0.5, -0.5, -0.5),
         color: vec3(1.0, 0.0, 0.0),
         uv: vec2(0.0, 0.0),
     },
     Vertex {
-        position: vec3(0.5, -0.5, 0.5),
+        position: vec3(0.5, -0.5, -0.5),
         color: vec3(1.0, 0.0, 0.0),
         uv: vec2(1.0, 0.0),
     },
     Vertex {
-        position: vec3(0.5, 0.5, 0.5),
+        position: vec3(0.5, 0.5, -0.5),
         color: vec3(1.0, 0.0, 0.0),
         uv: vec2(1.0, 1.0),
     },
     Vertex {
-        position: vec3(-0.5, 0.5, 0.5),
+        position: vec3(-0.5, 0.5, -0.5),
         color: vec3(1.0, 0.0, 0.0),
         uv: vec2(0.0, 1.0),
     },
