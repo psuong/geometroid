@@ -37,15 +37,14 @@ use ash::{
     },
     Device, Entry, Instance,
 };
-use cgmath::{Deg, Matrix4, Point3, Vector3, vec3, vec2};
+use cgmath::{vec2, vec3, Deg, Matrix4, Point3, Vector3};
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-use tobj::LoadOptions;
-
 use std::{
     ffi::{CStr, CString},
     mem::{align_of, size_of},
     panic,
-    time::Instant, path::Path,
+    path::Path,
+    time::Instant,
 };
 use winit::window::Window;
 
@@ -63,12 +62,9 @@ use debug::{
 };
 use utils::QueueFamiliesIndices;
 
+use self::texture::Texture;
 use self::uniform_buffer_object::UniformBufferObject;
 use self::utils::{InFlightFrames, SyncObjects};
-use self::{
-    render::{INDICES, VERTICES},
-    texture::Texture,
-};
 use self::{shader_utils::create_shader_module, utils::SwapchainProperties};
 use crate::{common::HEIGHT, engine::utils::SwapchainSupportDetails, WIDTH};
 
@@ -99,6 +95,7 @@ pub struct Engine {
     depth_format: Format,
     depth_texture: Texture,
     texture: Texture,
+    model_index_count: usize,
     uniform_buffers: Vec<Buffer>,
     uniform_buffer_memories: Vec<DeviceMemory>,
     vertex_buffer: Buffer,
@@ -193,11 +190,19 @@ impl Engine {
 
         let texture = Self::create_texture_image(&vk_context, command_pool, graphics_queue);
 
-        let (vertex_buffer, vertex_buffer_memory) =
-            Self::create_vertex_buffer(&vk_context, transient_command_pool, graphics_queue);
-
-        let (index_buffer, index_buffer_memory) =
-            Self::create_index_buffer(&vk_context, transient_command_pool, graphics_queue);
+        let (vertices, indices) = Self::load_model();
+        let (vertex_buffer, vertex_buffer_memory) = Self::create_vertex_buffer(
+            &vk_context,
+            transient_command_pool,
+            graphics_queue,
+            &vertices,
+        );
+        let (index_buffer, index_buffer_memory) = Self::create_index_buffer(
+            &vk_context,
+            transient_command_pool,
+            graphics_queue,
+            &indices,
+        );
 
         let (uniform_buffers, uniform_buffer_memories) =
             Self::create_uniform_buffers(&vk_context, images.len());
@@ -220,6 +225,7 @@ impl Engine {
             properties,
             vertex_buffer,
             index_buffer,
+            indices.len(),
             layout,
             &descriptor_sets,
             pipeline,
@@ -249,6 +255,7 @@ impl Engine {
             depth_format,
             depth_texture,
             texture,
+            model_index_count: indices.len(),
             vertex_buffer,
             vertex_buffer_memory,
             index_buffer,
@@ -586,6 +593,7 @@ impl Engine {
             properties,
             self.vertex_buffer,
             self.index_buffer,
+            self.model_index_count,
             layout,
             &self.descriptor_sets,
             pipeline,
@@ -1221,7 +1229,7 @@ impl Engine {
         command_pool: CommandPool,
         copy_queue: Queue,
     ) -> Texture {
-        let image = image::open("assets/textures/statue.jpg").unwrap();
+        let image = image::open("assets/textures/viking_room.png").unwrap();
         let image_as_rgb = image.to_rgba8();
         let extent = vk::Extent2D {
             width: (&image_as_rgb).width(),
@@ -1514,13 +1522,14 @@ impl Engine {
         vk_context: &VkContext,
         command_pool: CommandPool,
         transfer_queue: Queue,
+        vertices: &[Vertex],
     ) -> (Buffer, DeviceMemory) {
         Self::create_device_local_buffer_with_data::<u32, _>(
             vk_context,
             command_pool,
             transfer_queue,
             BufferUsageFlags::VERTEX_BUFFER,
-            &VERTICES,
+            vertices,
         )
     }
 
@@ -1528,13 +1537,14 @@ impl Engine {
         vk_context: &VkContext,
         command_pool: CommandPool,
         transfer_queue: Queue,
+        indices: &[u32],
     ) -> (Buffer, DeviceMemory) {
-        Self::create_device_local_buffer_with_data::<u16, _>(
+        Self::create_device_local_buffer_with_data::<u32, _>(
             vk_context,
             command_pool,
             transfer_queue,
             BufferUsageFlags::INDEX_BUFFER,
-            &INDICES,
+            indices,
         )
     }
 
@@ -1842,6 +1852,7 @@ impl Engine {
         swapchain_properties: SwapchainProperties,
         vertex_buffer: Buffer,
         index_buffer: Buffer,
+        index_count: usize,
         pipeline_layout: PipelineLayout,
         descriptor_sets: &[DescriptorSet],
         graphics_pipeline: Pipeline,
@@ -1916,7 +1927,7 @@ impl Engine {
             unsafe { device.cmd_bind_vertex_buffers(buffer, 0, &vertex_buffers, &offsets) };
 
             // Bind the index buffer
-            unsafe { device.cmd_bind_index_buffer(buffer, index_buffer, 0, IndexType::UINT16) };
+            unsafe { device.cmd_bind_index_buffer(buffer, index_buffer, 0, IndexType::UINT32) };
 
             // TODO: Bind the descriptor set
             unsafe {
@@ -1932,7 +1943,7 @@ impl Engine {
             };
 
             // Draw
-            unsafe { device.cmd_draw_indexed(buffer, INDICES.len() as _, 1, 0, 0, 0) }
+            unsafe { device.cmd_draw_indexed(buffer, index_count as _, 1, 0, 0, 0) }
 
             // End the renderpass
             unsafe { device.cmd_end_render_pass(buffer) };
@@ -2011,9 +2022,14 @@ impl Engine {
         Texture::new(image, mem, view, None)
     }
 
-    fn load_model() -> (Vec<Vertex> , Vec<u32>) {
-        log::debug!("Loading model...");
-        let (models, _) = tobj::load_obj(&Path::new("models/viking.obj"), &tobj::LoadOptions::default()).unwrap();
+    fn load_model() -> (Vec<Vertex>, Vec<u32>) {
+        let path = Path::new("assets/models/viking_room.obj");
+        log::info!("Loading model...{p}", p=path.to_str().unwrap());
+        let (models, _) = tobj::load_obj(
+            &path,
+            &tobj::LoadOptions::default(),
+        )
+        .unwrap();
         let mesh = &models[0].mesh;
         let positions = mesh.positions.as_slice();
         let coords = mesh.texcoords.as_slice();
@@ -2029,8 +2045,8 @@ impl Engine {
 
             let vertex = Vertex {
                 position: vec3(x, y, z),
-                uv: vec2(u, v),
-                color: vec3(1.0, 1.0, 1.0)
+                uv: vec2(u, 1.0 - v),
+                color: vec3(1.0, 1.0, 1.0),
             };
             vertices.push(vertex);
         }

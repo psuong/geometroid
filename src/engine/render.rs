@@ -3,55 +3,55 @@ use std::mem;
 use ash::vk::{
     Format, VertexInputAttributeDescription, VertexInputBindingDescription, VertexInputRate,
 };
-use cgmath::{vec2, vec3, Vector2, Vector3};
+use cgmath::{Vector2, Vector3};
 use memoffset::offset_of;
 
-pub const VERTICES: [Vertex; 8] = [
-    // First quad
-    Vertex {
-        position: vec3(-0.5, -0.5, 0.0),
-        color: vec3(1.0, 1.0, 1.0),
-        uv: vec2(0.0, 0.0),
-    },
-    Vertex {
-        position: vec3(0.5, -0.5, 0.0),
-        color: vec3(1.0, 1.0, 1.0),
-        uv: vec2(1.0, 0.0),
-    },
-    Vertex {
-        position: vec3(0.5, 0.5, 0.0),
-        color: vec3(1.0, 1.0, 1.0),
-        uv: vec2(1.0, 1.0),
-    },
-    Vertex {
-        position: vec3(-0.5, 0.5, 0.0),
-        color: vec3(1.0, 1.0, 1.0),
-        uv: vec2(0.0, 1.0),
-    },
-    // Second quad
-    Vertex {
-        position: vec3(-0.5, -0.5, -0.5),
-        color: vec3(1.0, 0.0, 0.0),
-        uv: vec2(0.0, 0.0),
-    },
-    Vertex {
-        position: vec3(0.5, -0.5, -0.5),
-        color: vec3(1.0, 0.0, 0.0),
-        uv: vec2(1.0, 0.0),
-    },
-    Vertex {
-        position: vec3(0.5, 0.5, -0.5),
-        color: vec3(1.0, 0.0, 0.0),
-        uv: vec2(1.0, 1.0),
-    },
-    Vertex {
-        position: vec3(-0.5, 0.5, -0.5),
-        color: vec3(1.0, 0.0, 0.0),
-        uv: vec2(0.0, 1.0),
-    },
-];
+// pub const VERTICES: [Vertex; 8] = [
+//     // First quad
+//     Vertex {
+//         position: vec3(-0.5, -0.5, 0.0),
+//         color: vec3(1.0, 1.0, 1.0),
+//         uv: vec2(0.0, 0.0),
+//     },
+//     Vertex {
+//         position: vec3(0.5, -0.5, 0.0),
+//         color: vec3(1.0, 1.0, 1.0),
+//         uv: vec2(1.0, 0.0),
+//     },
+//     Vertex {
+//         position: vec3(0.5, 0.5, 0.0),
+//         color: vec3(1.0, 1.0, 1.0),
+//         uv: vec2(1.0, 1.0),
+//     },
+//     Vertex {
+//         position: vec3(-0.5, 0.5, 0.0),
+//         color: vec3(1.0, 1.0, 1.0),
+//         uv: vec2(0.0, 1.0),
+//     },
+//     // Second quad
+//     Vertex {
+//         position: vec3(-0.5, -0.5, -0.5),
+//         color: vec3(1.0, 0.0, 0.0),
+//         uv: vec2(0.0, 0.0),
+//     },
+//     Vertex {
+//         position: vec3(0.5, -0.5, -0.5),
+//         color: vec3(1.0, 0.0, 0.0),
+//         uv: vec2(1.0, 0.0),
+//     },
+//     Vertex {
+//         position: vec3(0.5, 0.5, -0.5),
+//         color: vec3(1.0, 0.0, 0.0),
+//         uv: vec2(1.0, 1.0),
+//     },
+//     Vertex {
+//         position: vec3(-0.5, 0.5, -0.5),
+//         color: vec3(1.0, 0.0, 0.0),
+//         uv: vec2(0.0, 1.0),
+//     },
+// ];
 
-pub const INDICES: [u16; 12] = [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7];
+// pub const INDICES: [u16; 12] = [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7];
 
 #[derive(Copy, Clone)]
 pub struct Vertex {
