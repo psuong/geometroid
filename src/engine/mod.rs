@@ -1033,7 +1033,7 @@ impl Engine {
             .rasterizer_discard_enable(false)
             .polygon_mode(PolygonMode::FILL)
             .line_width(1.0)
-            .cull_mode(CullModeFlags::BACK)
+            .cull_mode(CullModeFlags::FRONT)
             .front_face(FrontFace::CLOCKWISE)
             .depth_bias_enable(false)
             .depth_bias_constant_factor(0.0)
