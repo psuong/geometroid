@@ -20,8 +20,7 @@ impl Source {
     }
 
     pub fn shader_src(&self) -> PathBuf {
-        let path = self.root.clone().join("assets").join("shaders");
-        path
+        self.root.clone().join("assets").join("shaders")
     }
 }
 

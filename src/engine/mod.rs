@@ -804,8 +804,8 @@ impl Engine {
     }
 
     // TODO: Add ash::vk::KhrMaintenance1Fn::name()
-    fn get_required_device_extensions() -> [&'static CStr; 1] {
-        [Swapchain::name()]
+    fn get_required_device_extensions() -> [&'static CStr; 2] {
+        [Swapchain::name(), ash::vk::KhrMaintenance1Fn::name()]
     }
 
     fn create_swapchain_and_images(
@@ -1001,12 +1001,13 @@ impl Engine {
             .primitive_restart_enable(false)
             .build();
 
+        let height = swapchain_properties.extent.height as f32;
         // TODO: Flip the viewport b/c I'm more familiar with OpenGL instead
         let viewport = Viewport {
             x: 0.0,
-            y: 0.0,
+            y: height,
             width: swapchain_properties.extent.width as _,
-            height: swapchain_properties.extent.height as i32 as _,
+            height: -1.0 * height,
             min_depth: 0.0,
             max_depth: 1.0,
         };
@@ -2029,12 +2030,8 @@ impl Engine {
 
     fn load_model() -> (Vec<Vertex>, Vec<u32>) {
         let path = Path::new("assets/models/viking_room.obj");
-        log::info!("Loading model...{p}", p=path.to_str().unwrap());
-        let (models, _) = tobj::load_obj(
-            &path,
-            &tobj::LoadOptions::default(),
-        )
-        .unwrap();
+        log::info!("Loading model...{p}", p = path.to_str().unwrap());
+        let (models, _) = tobj::load_obj(&path, &tobj::LoadOptions::default()).unwrap();
         let mesh = &models[0].mesh;
         let positions = mesh.positions.as_slice();
         let coords = mesh.texcoords.as_slice();
