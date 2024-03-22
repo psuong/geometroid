@@ -960,25 +960,26 @@ impl Engine {
         let current_dir = std::env::current_dir().unwrap();
         log::info!("Current directory: {:?}", current_dir);
 
-        let vert_path = current_dir.join("assets/shaders/shader.vert.spv");
+        let vert_path = current_dir.join("assets/shaders/unlit-vert.spv");
         let vert_source = read_shader_from_file(vert_path);
-        let frag_path = current_dir.join("assets/shaders/shader.frag.spv");
+        let frag_path = current_dir.join("assets/shaders/unlit-frag.spv");
         let frag_source = read_shader_from_file(frag_path);
 
         let vertex_shader_module = create_shader_module(device, &vert_source);
         let fragment_shader_module = create_shader_module(device, &frag_source);
 
-        let entry_point_name = CString::new("main").unwrap();
+        let vert_entry_point = CString::new("vert").unwrap();
         let vertex_shader_state_info = PipelineShaderStageCreateInfo::builder()
             .stage(ShaderStageFlags::VERTEX)
             .module(vertex_shader_module)
-            .name(&entry_point_name)
+            .name(&vert_entry_point)
             .build();
 
+        let frag_entry_point = CString::new("frag").unwrap();
         let fragment_shader_state_info = PipelineShaderStageCreateInfo::builder()
             .stage(ShaderStageFlags::FRAGMENT)
             .module(fragment_shader_module)
-            .name(&entry_point_name)
+            .name(&frag_entry_point)
             .build();
 
         let shader_states_info = [vertex_shader_state_info, fragment_shader_state_info];
