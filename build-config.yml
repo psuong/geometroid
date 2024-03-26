@@ -1,0 +1,4 @@
+source:
+    shader: assets/shaders
+    models: assets/models
+    textures: assets/textures

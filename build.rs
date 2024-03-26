@@ -12,13 +12,15 @@ enum ShaderStage {
 struct Source {
     root: PathBuf,
     shader_log: PathBuf,
+    config: PathBuf
 }
 
 impl Source {
     pub fn new() -> Self {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let shader_log = root.clone().join("shader.log");
-        Source { root, shader_log }
+        let config = root.clone().join("build-config.yml");
+        Source { root, shader_log, config }
     }
 
     pub fn shader_src(&self) -> PathBuf {
@@ -31,6 +33,8 @@ fn main() {
     let shader_dir_path = source.shader_src();
 
     let mut log_messages: Vec<String> = Vec::new();
+
+    log_messages.push(format!("Root Directory: {}", source.root.to_str().unwrap()));
 
     read_dir(shader_dir_path.clone())
         .unwrap()
@@ -80,7 +84,10 @@ fn compile_shader(
         ShaderStage::Fragment => ("frag", "ps_6_0"),
     };
 
-    log_messages.push(format!("Compiling: {}, with entry point: {}", shader_name, stage_entry_point));
+    log_messages.push(format!("Compiling in directory: {}, with shader name: {}, with entry point: {}", 
+        shader_dir_path.to_str().unwrap(),
+        shader_name, 
+        stage_entry_point));
 
     let result = dbg!(Command::new("dxc"))
         .current_dir(&shader_dir_path)
