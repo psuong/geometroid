@@ -1,11 +1,13 @@
 // build.rs
 use std::{
-    ffi::OsStr,
-    fs::{read_dir, File},
-    io::{Result, Write},
-    path::PathBuf,
-    process::{Command, Output},
+    ffi::OsStr, fs::{read_dir, File}, io::{Result, Write}, path::PathBuf, process::{Command, Output}
 };
+
+/// Defines the Shader Stage to compile.
+enum ShaderStage {
+    Vertex,
+    Fragment
+}
 
 struct Source {
     root: PathBuf,
@@ -30,30 +32,19 @@ fn main() {
 
     let mut log_messages: Vec<String> = Vec::new();
 
-    println!("Shader directory: {:?}", shader_dir_path);
-
     read_dir(shader_dir_path.clone())
         .unwrap()
         .map(Result::unwrap)
         .filter(|dir| dir.file_type().unwrap().is_file())
-        .filter(|dir| dir.path().extension() != Some(OsStr::new("spv")))
+        .filter(|dir| dir.path().extension() == Some(OsStr::new("hlsl")))
         .for_each(|dir| {
-            let path = dir.path();
-            let name = path.file_name().unwrap().to_str().unwrap();
-            let output_name = format!("{}.spv", &name);
+            let dir_path = dir.path();
+            let file_stem = dir_path.file_stem().unwrap().to_str().unwrap();
+            let frag_output_name = format!("{}-frag.spv", &file_stem);
+            compile_shader(ShaderStage::Fragment, &shader_dir_path, &dir_path, &frag_output_name, &source, &mut log_messages);
 
-            let msg = format!("Found file {:?}.\nCompiling...", path.as_os_str());
-            log_messages.push(msg);
-
-            let result = dbg!(Command::new("glslangValidator"))
-                .current_dir(&shader_dir_path)
-                .arg("-V")
-                .arg(&path)
-                .arg("-o")
-                .arg(output_name)
-                .output();
-
-            handle_shader_result(source.shader_log.clone(), result, &mut log_messages);
+            let vert_output_name = format!("{}-vert.spv", &file_stem);
+            compile_shader(ShaderStage::Vertex, &shader_dir_path, &dir_path, &vert_output_name, &source, &mut log_messages);
         });
 
     let current_dir = std::env::current_dir();
@@ -65,11 +56,59 @@ fn main() {
     };
 }
 
+/// Determines the stage to compile based on the shader\_stage. Stores all messages into the 
+/// the log\_messages.
+///
+/// # Arguments
+///
+/// * `shader_stage` - The ShaderStage to compile
+/// * `shader_dir_path` - The current shader's parent directory
+/// * `dir_path` - The directory path to output to
+/// * `shader_name` - The name of the shader to compile
+/// * `source` - The source logger
+/// * `log_messages` - The Vec\<String\> that stores all messages done by the shader compiler
+fn compile_shader(
+    shader_stage: ShaderStage,
+    shader_dir_path: &PathBuf,
+    dir_path: &PathBuf,
+    shader_name: &str,
+    source: &Source,
+    log_messages: &mut Vec<String>) {
+
+    let (stage_entry_point, stage_arg) = match shader_stage {
+        ShaderStage::Vertex => ("vert", "vs_6_0"),
+        ShaderStage::Fragment => ("frag", "ps_6_0"),
+    };
+
+    log_messages.push(format!("Compiling: {}, with entry point: {}", shader_name, stage_entry_point));
+
+    let result = dbg!(Command::new("dxc"))
+        .current_dir(&shader_dir_path)
+        .arg("-spirv")
+        .arg("-T")
+        .arg(stage_arg)
+        .arg("-E")
+        .arg(stage_entry_point)
+        .arg(&dir_path)
+        .arg("-Fo")
+        .arg(shader_name)
+        .arg("-fspv-extension=SPV_EXT_descriptor_indexing")
+        .output();
+
+    handle_shader_result(source.shader_log.clone(), result, log_messages);
+}
+
+/// Stores all log messages of the shader compilation pipeline.
+///
+/// # Arguments
+///
+/// * `path_buffer` - The file to write logs to
+/// * `result` - The state of the shader compiler
+/// * `log_messages` - A Vec\<String\> of messages to store into
 fn handle_shader_result(
     path_buffer: PathBuf,
     result: Result<Output>,
-    log_messages: &mut Vec<String>,
-) {
+    log_messages: &mut Vec<String>) {
     match result {
         Ok(output) => {
             if output.status.success() {
