@@ -1,7 +1,9 @@
 // build.rs
 use std::{
-    ffi::OsStr, fs::{read_dir, File}, io::{Result, Write}, path::PathBuf, process::{Command, Output}
+    ffi::OsStr, fs::{read_dir, read_to_string, File}, io::{Result, Write}, path::{Path, PathBuf}, process::{Command, Output}
 };
+
+use yaml_rust2::YamlLoader;
 
 /// Defines the Shader Stage to compile.
 enum ShaderStage {
@@ -24,7 +26,16 @@ impl Source {
     }
 
     pub fn shader_src(&self) -> PathBuf {
-        self.root.clone().join("assets").join("shaders")
+        let content = read_to_string(self.config.as_path()).unwrap();
+        let docs = YamlLoader::load_from_str(&content).unwrap();
+        let doc = &docs[0];
+
+        let mut path_buffer = PathBuf::new();
+        path_buffer.push(self.root.as_path());
+        let trailing_path = doc["source"]["shader"].as_str().unwrap();
+        path_buffer.push(Path::new(&trailing_path));
+
+        path_buffer
     }
 }
 
@@ -35,6 +46,7 @@ fn main() {
     let mut log_messages: Vec<String> = Vec::new();
 
     log_messages.push(format!("Root Directory: {}", source.root.to_str().unwrap()));
+    log_messages.push(format!("Shader Directory: {}", source.shader_src().to_str().unwrap()));
 
     read_dir(shader_dir_path.clone())
         .unwrap()
