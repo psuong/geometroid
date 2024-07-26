@@ -7,6 +7,7 @@ use ash::{
 };
 
 pub fn read_shader_from_file<P: AsRef<Path>>(path: P) -> Vec<u32> {
+    log::info!("{}", path.as_ref().to_str().unwrap());
     let mut file = File::open(path).unwrap();
     read_spv(&mut file).unwrap()
 }

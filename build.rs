@@ -115,6 +115,7 @@ fn compile_shader(
         .output();
 
     handle_shader_result(source.shader_log.clone(), result, log_messages);
+    // TODO: copy the assets directory to the build folder
 }
 
 /// Stores all log messages of the shader compilation pipeline.
