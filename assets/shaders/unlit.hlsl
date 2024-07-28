@@ -3,13 +3,15 @@
 
 struct VSInput {
     [[vk::location(0)]] float3 position : POSITION0;
-    [[vk::location(1)]] float3 color : COLOR0;
-    [[vk::location(2)]] float2 uv0 : TEXCOORD0;
+    [[vk::location(1)]] float3 normal: NORMAL0;
+    [[vk::location(2)]] float3 color : COLOR0;
+    [[vk::location(3)]] float2 uv0 : TEXCOORD0;
 };
 
 struct VSOutput {
     float3 color : COLOR0;
     float2 uv : TEXCOORD0;
+    float3 normal: NORMAL0;
     float4 positionWS : SV_POSITION;
 };
 
@@ -35,6 +37,7 @@ VSOutput vert(VSInput input) {
     output.positionWS = ComputePosition(ubo, input.position);
     output.color = input.color;
     output.uv = input.uv0;
+    output.normal = input.normal;
     return output;
 }
 

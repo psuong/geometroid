@@ -56,6 +56,7 @@ use memoffset::offset_of;
 #[derive(Copy, Clone)]
 pub struct Vertex {
     pub position: Vector3<f32>,
+    pub normal: Vector3<f32>,
     pub color: Vector3<f32>,
     pub uv: Vector2<f32>,
 }
@@ -78,7 +79,7 @@ impl Vertex {
     /// attribute from a chunk of vertex data originating from a binding
     /// description. We have two attributes, position and color, so we need
     /// two attribute description structs.
-    pub fn get_attribute_descriptions() -> [VertexInputAttributeDescription; 3] {
+    pub fn get_attribute_descriptions() -> [VertexInputAttributeDescription; 4] {
         let position_desc = VertexInputAttributeDescription::builder()
             .binding(0)
             .location(0)
@@ -86,20 +87,27 @@ impl Vertex {
             .offset(offset_of!(Vertex, position) as u32)
             .build();
 
-        let color_desc = VertexInputAttributeDescription::builder()
+        let normal_desc = VertexInputAttributeDescription::builder()
             .binding(0)
             .location(1)
+            .format(Format::R32G32B32_SFLOAT)
+            .offset(offset_of!(Vertex, normal) as u32)
+            .build();
+
+        let color_desc = VertexInputAttributeDescription::builder()
+            .binding(0)
+            .location(2)
             .format(Format::R32G32B32_SFLOAT)
             .offset(offset_of!(Vertex, color) as u32)
             .build();
 
         let tex_coord_desc = VertexInputAttributeDescription::builder()
             .binding(0)
-            .location(2)
-            .format(Format::R32G32B32_SFLOAT)
+            .location(3)
+            .format(Format::R32G32_SFLOAT)
             .offset(offset_of!(Vertex, uv) as u32)
             .build();
 
-        [position_desc, color_desc, tex_coord_desc]
+        [position_desc, normal_desc, color_desc, tex_coord_desc]
     }
 }

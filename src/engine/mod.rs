@@ -55,6 +55,7 @@ pub mod shader_utils;
 pub mod texture;
 pub mod uniform_buffer_object;
 pub mod utils;
+pub mod mesh_builder;
 
 use context::VkContext;
 use debug::{
@@ -2049,6 +2050,7 @@ impl Engine {
             let vertex = Vertex {
                 position: vec3(x, y, z),
                 uv: vec2(u, 1.0 - v),
+                normal: vec3(0.0, 0.0, 0.0),
                 color: vec3(1.0, 1.0, 1.0),
             };
             vertices.push(vertex);
