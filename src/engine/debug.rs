@@ -1,7 +1,7 @@
 use std::ffi::{c_void, CStr, CString};
 
 use ash::{
-    extensions::ext::DebugUtils,
+    ext::debug_utils,
     vk::{
         self, DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageSeverityFlagsEXT as SeverityFlag,
         DebugUtilsMessageTypeFlagsEXT, DebugUtilsMessageTypeFlagsEXT as TypeFlag,
@@ -38,12 +38,12 @@ pub fn get_layer_names_and_pointers() -> (Vec<CString>, Vec<*const i8>) {
 pub fn setup_debug_messenger(
     entry: &Entry,
     instance: &Instance,
-) -> Option<(DebugUtils, DebugUtilsMessengerEXT)> {
+) -> Option<(debug_utils::Instance, DebugUtilsMessengerEXT)> {
     if !ENABLE_VALIDATION_LAYERS {
         return None;
     }
 
-    let create_info = DebugUtilsMessengerCreateInfoEXT::builder()
+    let create_info = DebugUtilsMessengerCreateInfoEXT::default()
         .message_severity(
             DebugUtilsMessageSeverityFlagsEXT::ERROR
                 | DebugUtilsMessageSeverityFlagsEXT::INFO
@@ -54,16 +54,14 @@ pub fn setup_debug_messenger(
                 | DebugUtilsMessageTypeFlagsEXT::PERFORMANCE
                 | DebugUtilsMessageTypeFlagsEXT::VALIDATION,
         )
-        .pfn_user_callback(Some(vulkan_debug_callback))
-        .build();
-
-    let debug_report = DebugUtils::new(entry, instance);
-    let debug_report_callback = unsafe {
-        debug_report
+        .pfn_user_callback(Some(vulkan_debug_callback));
+    let debug_utils = debug_utils::Instance::new(entry, instance);
+    let debug_utils_messenger = unsafe {
+        debug_utils
             .create_debug_utils_messenger(&create_info, None)
             .unwrap()
     };
-    Some((debug_report, debug_report_callback))
+    Some((debug_utils, debug_utils_messenger))
 }
 
 /// Delegate allows the engine to log messages from vulkan to stdout.

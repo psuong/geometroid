@@ -2,10 +2,8 @@ pub(crate) use crate::common::MAX_FRAMES_IN_FLIGHT;
 use crate::engine::{render::Vertex, shader_utils::read_shader_from_file};
 
 use ash::{
-    extensions::{
-        ext::DebugUtils,
-        khr::{Surface, Swapchain},
-    },
+    ext::debug_utils,
+    khr::{surface, swapchain as khr_swapchain},
     util::Align,
     vk::{
         self, AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference,
@@ -22,40 +20,37 @@ use ash::{
         GraphicsPipelineCreateInfo, Image, ImageAspectFlags, ImageCreateFlags, ImageCreateInfo,
         ImageLayout, ImageMemoryBarrier, ImageSubresourceLayers, ImageSubresourceRange,
         ImageTiling, ImageType, ImageUsageFlags, ImageView, ImageViewCreateInfo, ImageViewType,
-        IndexType, InstanceCreateInfo, LogicOp, MemoryAllocateInfo, MemoryMapFlags,
-        MemoryPropertyFlags, MemoryRequirements, Offset2D, Offset3D, PhysicalDevice,
-        PhysicalDeviceFeatures, PhysicalDeviceMemoryProperties, Pipeline, PipelineBindPoint,
-        PipelineCache, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo,
-        PipelineInputAssemblyStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo,
-        PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo,
-        PipelineShaderStageCreateInfo, PipelineStageFlags, PipelineVertexInputStateCreateInfo,
-        PipelineViewportStateCreateInfo, PolygonMode, PrimitiveTopology, Queue, QueueFlags, Rect2D,
-        RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags,
-        SemaphoreCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo, SubpassContents,
-        SubpassDependency, SubpassDescription, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR,
-        Viewport, WriteDescriptorSet, QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL, TRUE,
+        IndexType, InstanceCreateFlags, LogicOp, MemoryAllocateInfo,
+        MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements, Offset2D, Offset3D,
+        PhysicalDevice, PhysicalDeviceFeatures, PhysicalDeviceMemoryProperties, Pipeline,
+        PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState,
+        PipelineColorBlendStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineLayout,
+        PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo,
+        PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags,
+        PipelineVertexInputStateCreateInfo, PipelineViewportStateCreateInfo, PolygonMode,
+        PrimitiveTopology, Queue, QueueFlags, Rect2D, RenderPass, RenderPassBeginInfo,
+        RenderPassCreateInfo, SampleCountFlags, SemaphoreCreateInfo, ShaderStageFlags, SharingMode,
+        SubmitInfo, SubpassContents, SubpassDependency, SubpassDescription, SurfaceKHR,
+        SwapchainCreateInfoKHR, SwapchainKHR, Viewport, WriteDescriptorSet, QUEUE_FAMILY_IGNORED,
+        SUBPASS_EXTERNAL, TRUE,
     },
     Device, Entry, Instance,
 };
 use cgmath::{vec2, vec3, Deg, Matrix4, Point3, Vector3};
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::{
-    ffi::{CStr, CString},
-    mem::{align_of, size_of},
-    panic,
-    path::Path,
-    time::Instant,
+    ffi::{CStr, CString}, mem::{align_of, size_of}, panic, path::Path, time::Instant
 };
 use winit::window::Window;
 
 pub mod context;
 pub mod debug;
+pub mod mesh_builder;
 pub mod render;
 pub mod shader_utils;
 pub mod texture;
 pub mod uniform_buffer_object;
 pub mod utils;
-pub mod mesh_builder;
 
 use context::VkContext;
 use debug::{
@@ -87,7 +82,7 @@ pub struct Engine {
     render_pass: RenderPass,
     resize_dimensions: Option<[u32; 2]>,
     _start_instant: Instant,
-    swapchain: Swapchain,
+    swapchain: khr_swapchain::Device,
     swapchain_framebuffers: Vec<Framebuffer>,
     swapchain_image_views: Vec<ImageView>,
     swapchain_khr: SwapchainKHR,
@@ -107,16 +102,16 @@ pub struct Engine {
 impl Engine {
     pub fn new(window: &Window) -> Self {
         let entry = unsafe { Entry::load().unwrap() };
-        let instance = Self::create_instance(&entry);
+        let instance = Self::create_instance(&entry, window);
         let debug_report_callback = setup_debug_messenger(&entry, &instance);
 
-        let surface = Surface::new(&entry, &instance);
+        let surface = surface::Instance::new(&entry, &instance);
         let surface_khr = unsafe {
             ash_window::create_surface(
                 &entry,
                 &instance,
-                window.raw_display_handle(),
-                window.raw_window_handle(),
+                window.display_handle().unwrap().as_raw(),
+                window.window_handle().unwrap().as_raw(),
                 None,
             )
             .unwrap()
@@ -270,28 +265,32 @@ impl Engine {
         }
     }
 
-    fn create_instance(entry: &Entry) -> Instance {
+    fn create_instance(entry: &Entry, window: &Window) -> Instance {
         let app_name = CString::new("Geometroid").unwrap();
         let engine_name = CString::new("No Engine").unwrap();
-        let app_info = vk::ApplicationInfo::builder()
+        let app_info = vk::ApplicationInfo::default()
             .application_name(app_name.as_c_str())
             .application_version(vk::make_api_version(0, 0, 1, 0))
             .engine_name(engine_name.as_c_str())
             .engine_version(vk::make_api_version(0, 0, 1, 0))
-            .api_version(vk::make_api_version(0, 1, 0, 0))
-            .build();
+            .api_version(vk::make_api_version(0, 1, 0, 0));
 
-        let mut extension_names = utils::required_extension_names();
+        let extension_names =
+            ash_window::enumerate_required_extensions(window.display_handle().unwrap().as_raw())
+                .unwrap();
+
+        let mut extension_names = extension_names.to_vec();
         // Enable validation layers
         if ENABLE_VALIDATION_LAYERS {
-            extension_names.push(DebugUtils::name().as_ptr());
+            extension_names.push(debug_utils::NAME.as_ptr());
         }
 
         let (_layer_names, layer_names_ptrs) = get_layer_names_and_pointers();
 
-        let mut instance_create_info = InstanceCreateInfo::builder()
+        let mut instance_create_info = vk::InstanceCreateInfo::default()
             .application_info(&app_info)
-            .enabled_extension_names(&extension_names);
+            .enabled_extension_names(&extension_names)
+            .flags(InstanceCreateFlags::default());
 
         if ENABLE_VALIDATION_LAYERS {
             Self::check_validation_layer_support(&entry);
@@ -349,12 +348,12 @@ impl Engine {
         {
             let wait_stages = [PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
             let command_buffers = [self.command_buffers[image_index as usize]];
-            let submit_info = vk::SubmitInfo::builder()
+            let submit_info = vk::SubmitInfo::default()
                 .wait_semaphores(&wait_semaphores)
                 .wait_dst_stage_mask(&wait_stages)
                 .command_buffers(&command_buffers)
-                .signal_semaphores(&signal_semaphores)
-                .build();
+                .signal_semaphores(&signal_semaphores);
+
             let submit_infos = [submit_info];
             unsafe {
                 device
@@ -367,12 +366,12 @@ impl Engine {
         let images_indices = [image_index];
 
         {
-            let present_info = vk::PresentInfoKHR::builder()
+            let present_info = vk::PresentInfoKHR::default()
                 .wait_semaphores(&signal_semaphores)
                 .swapchains(&swapchains)
-                .image_indices(&images_indices)
-                // .results() null since we only have one swapchain
-                .build();
+                .image_indices(&images_indices);
+            // .results() null since we only have one swapchain
+
             let result = unsafe {
                 self.swapchain
                     .queue_present(self.present_queue, &present_info)
@@ -423,10 +422,9 @@ impl Engine {
 
         let pool_sizes = [ubo_pool_size, sampler_pool_size];
 
-        let pool_info = DescriptorPoolCreateInfo::builder()
+        let pool_info = DescriptorPoolCreateInfo::default()
             .pool_sizes(&pool_sizes)
-            .max_sets(size)
-            .build();
+            .max_sets(size);
         unsafe { device.create_descriptor_pool(&pool_info, None).unwrap() }
     }
 
@@ -454,46 +452,42 @@ impl Engine {
         let layouts = (0..uniform_buffers.len())
             .map(|_| layout)
             .collect::<Vec<_>>();
-        let alloc_info = DescriptorSetAllocateInfo::builder()
+        let alloc_info = DescriptorSetAllocateInfo::default()
             .descriptor_pool(pool)
-            .set_layouts(&layouts)
-            .build();
+            .set_layouts(&layouts);
+
         let descriptor_sets = unsafe { device.allocate_descriptor_sets(&alloc_info).unwrap() };
 
         descriptor_sets
             .iter()
             .zip(uniform_buffers.iter())
             .for_each(|(set, buffer)| {
-                let buffer_info = vk::DescriptorBufferInfo::builder()
+                let buffer_info = vk::DescriptorBufferInfo::default()
                     .buffer(*buffer)
                     .offset(0)
-                    .range(size_of::<UniformBufferObject>() as vk::DeviceSize)
-                    .build();
+                    .range(size_of::<UniformBufferObject>() as vk::DeviceSize);
                 let buffer_infos = [buffer_info];
 
                 // Create the descriptor set for the image here
-                let image_info = DescriptorImageInfo::builder()
+                let image_info = DescriptorImageInfo::default()
                     .image_layout(ImageLayout::SHADER_READ_ONLY_OPTIMAL)
                     .image_view(texture.view)
-                    .sampler(texture.sampler.unwrap())
-                    .build();
+                    .sampler(texture.sampler.unwrap());
                 let image_infos = [image_info];
 
-                let ubo_descriptor_write = WriteDescriptorSet::builder()
+                let ubo_descriptor_write = WriteDescriptorSet::default()
                     .dst_set(*set)
                     .dst_binding(0)
                     .dst_array_element(0)
                     .descriptor_type(DescriptorType::UNIFORM_BUFFER)
-                    .buffer_info(&buffer_infos)
-                    .build();
+                    .buffer_info(&buffer_infos);
 
-                let sampler_descriptor_write = WriteDescriptorSet::builder()
+                let sampler_descriptor_write = WriteDescriptorSet::default()
                     .dst_set(*set)
                     .dst_binding(1)
                     .dst_array_element(0)
                     .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
-                    .image_info(&image_infos)
-                    .build();
+                    .image_info(&image_infos);
 
                 let descriptor_writes = [ubo_descriptor_write, sampler_descriptor_write];
                 let null = [];
@@ -619,16 +613,13 @@ impl Engine {
     }
 
     fn check_validation_layer_support(entry: &Entry) {
+        let supported_layers = unsafe { entry.enumerate_instance_layer_properties().unwrap() };
         for required in REQUIRED_LAYERS {
-            let found = entry
-                .enumerate_instance_layer_properties()
-                .unwrap()
-                .iter()
-                .any(|layer| {
-                    let name = unsafe { CStr::from_ptr(layer.layer_name.as_ptr()) };
-                    let name = name.to_str().expect("Failed to get layer name pointer");
-                    required == name
-                });
+            let found = supported_layers.iter().any(|layer| {
+                let name = unsafe { CStr::from_ptr(layer.layer_name.as_ptr()) };
+                let name = name.to_str().expect("Failed to get layer name pointer");
+                required == name
+            });
 
             if !found {
                 panic!("Validation layer not supported: {}", required);
@@ -639,7 +630,7 @@ impl Engine {
     /// Pick an actual graphics card that exists on the machine.
     fn pick_physical_device(
         instance: &Instance,
-        surface: &Surface,
+        surface: &surface::Instance,
         surface_khr: SurfaceKHR,
     ) -> (PhysicalDevice, QueueFamiliesIndices) {
         let devices = unsafe { instance.enumerate_physical_devices().unwrap() };
@@ -666,7 +657,7 @@ impl Engine {
     /// queue index, which may be at different indices.
     fn is_device_suitable(
         instance: &Instance,
-        surface: &Surface,
+        surface: &surface::Instance,
         surface_khr: SurfaceKHR,
         device: PhysicalDevice,
     ) -> bool {
@@ -711,7 +702,7 @@ impl Engine {
     /// can present images to the surface that is created.
     fn find_queue_families(
         instance: &Instance,
-        surface: &Surface,
+        surface: &surface::Instance,
         surface_khr: SurfaceKHR,
         device: PhysicalDevice,
     ) -> (Option<u32>, Option<u32>) {
@@ -763,12 +754,11 @@ impl Engine {
             indices
                 .iter()
                 .map(|index| {
-                    DeviceQueueCreateInfo::builder()
+                    DeviceQueueCreateInfo::default()
                         .queue_family_index(*index)
                         .queue_priorities(&queue_priorities)
-                        .build()
                 })
-                .collect()
+                .collect::<Vec<_>>()
         };
 
         // Grab the device extensions so that we can build the swapchain
@@ -778,21 +768,13 @@ impl Engine {
             .map(|ext| ext.as_ptr())
             .collect::<Vec<_>>();
 
-        let device_features = PhysicalDeviceFeatures::builder()
-            .sampler_anisotropy(true)
-            .build();
-        let (_layer_names, layer_ptrs) = get_layer_names_and_pointers();
+        let device_features = PhysicalDeviceFeatures::default().sampler_anisotropy(true);
 
-        let mut device_create_info_builder = DeviceCreateInfo::builder()
+        let device_create_info = DeviceCreateInfo::default()
             .queue_create_infos(&queue_create_infos)
             .enabled_extension_names(&device_extension_ptrs)
             .enabled_features(&device_features);
 
-        if ENABLE_VALIDATION_LAYERS {
-            device_create_info_builder = device_create_info_builder.enabled_layer_names(&layer_ptrs)
-        }
-
-        let device_create_info = device_create_info_builder.build();
         let device = unsafe {
             instance
                 .create_device(device, &device_create_info, None)
@@ -804,16 +786,26 @@ impl Engine {
         (device, graphics_queue, present_queue)
     }
 
-    // TODO: Add ash::vk::KhrMaintenance1Fn::name()
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     fn get_required_device_extensions() -> [&'static CStr; 2] {
-        [Swapchain::name(), ash::vk::KhrMaintenance1Fn::name()]
+        [khr_swapchain::NAME, ash::khr::portability_subset::NAME]
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+    fn get_required_device_extensions() -> [&'static CStr; 1] {
+        [khr_swapchain::NAME]
     }
 
     fn create_swapchain_and_images(
         vk_context: &VkContext,
         queue_families_indices: QueueFamiliesIndices,
         dimensions: [u32; 2],
-    ) -> (Swapchain, SwapchainKHR, SwapchainProperties, Vec<Image>) {
+    ) -> (
+        khr_swapchain::Device,
+        SwapchainKHR,
+        SwapchainProperties,
+        Vec<Image>,
+    ) {
         let details = SwapchainSupportDetails::new(
             vk_context.physical_device_ref(),
             vk_context.surface_ref(),
@@ -852,7 +844,7 @@ impl Engine {
         let families_indices = [graphics, present];
 
         let create_info = {
-            let mut builder = SwapchainCreateInfoKHR::builder()
+            let mut builder = SwapchainCreateInfoKHR::default()
                 .surface(vk_context.surface_khr())
                 .min_image_count(image_count)
                 .image_format(format.format)
@@ -874,10 +866,10 @@ impl Engine {
                 .composite_alpha(CompositeAlphaFlagsKHR::OPAQUE)
                 .present_mode(present_mode)
                 .clipped(true)
-                .build()
         };
 
-        let swapchain = Swapchain::new(vk_context.instance_ref(), vk_context.device_ref());
+        let swapchain =
+            khr_swapchain::Device::new(vk_context.instance_ref(), vk_context.device_ref());
         let swapchain_khr = unsafe { swapchain.create_swapchain(&create_info, None).unwrap() };
         let images = unsafe { swapchain.get_swapchain_images(swapchain_khr).unwrap() };
         (swapchain, swapchain_khr, properties, images)
@@ -912,7 +904,7 @@ impl Engine {
         format: Format,
         aspect_mask: ImageAspectFlags,
     ) -> ImageView {
-        let create_info = ImageViewCreateInfo::builder()
+        let create_info = ImageViewCreateInfo::default()
             .image(image)
             .view_type(ImageViewType::TYPE_2D)
             .format(format)
@@ -922,8 +914,7 @@ impl Engine {
                 level_count: 1,
                 base_array_layer: 0,
                 layer_count: 1,
-            })
-            .build();
+            });
 
         unsafe { device.create_image_view(&create_info, None).unwrap() }
     }
@@ -934,16 +925,14 @@ impl Engine {
     /// A common example is binding 2 buffers and an image to the mesh.
     fn create_descriptor_set_layout(device: &Device) -> DescriptorSetLayout {
         let ubo_binding = UniformBufferObject::get_descriptor_set_layout_binding();
-        let sampler_binding = DescriptorSetLayoutBinding::builder()
+        let sampler_binding = DescriptorSetLayoutBinding::default()
             .binding(1)
             .descriptor_count(1)
             .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .stage_flags(ShaderStageFlags::FRAGMENT)
-            .build();
+            .stage_flags(ShaderStageFlags::FRAGMENT);
         let bindings = [ubo_binding, sampler_binding];
-        let layout_info = DescriptorSetLayoutCreateInfo::builder()
-            .bindings(&bindings)
-            .build();
+        let layout_info = DescriptorSetLayoutCreateInfo::default()
+            .bindings(&bindings);
 
         unsafe {
             device
@@ -970,18 +959,16 @@ impl Engine {
         let fragment_shader_module = create_shader_module(device, &frag_source);
 
         let vert_entry_point = CString::new("vert").unwrap();
-        let vertex_shader_state_info = PipelineShaderStageCreateInfo::builder()
+        let vertex_shader_state_info = PipelineShaderStageCreateInfo::default()
             .stage(ShaderStageFlags::VERTEX)
             .module(vertex_shader_module)
-            .name(&vert_entry_point)
-            .build();
+            .name(&vert_entry_point);
 
         let frag_entry_point = CString::new("frag").unwrap();
-        let fragment_shader_state_info = PipelineShaderStageCreateInfo::builder()
+        let fragment_shader_state_info = PipelineShaderStageCreateInfo::default()
             .stage(ShaderStageFlags::FRAGMENT)
             .module(fragment_shader_module)
-            .name(&frag_entry_point)
-            .build();
+            .name(&frag_entry_point);
 
         let shader_states_info = [vertex_shader_state_info, fragment_shader_state_info];
 
@@ -990,18 +977,16 @@ impl Engine {
 
         // Describes the layout of the vertex data.
         // TODO: Uncomment when I create a mesh struct.
-        let vertex_input_info = PipelineVertexInputStateCreateInfo::builder()
+        let vertex_input_info = PipelineVertexInputStateCreateInfo::default()
             .vertex_binding_descriptions(&vertex_binding_descs)
-            .vertex_attribute_descriptions(&vertex_attribute_descs)
-            .build();
+            .vertex_attribute_descriptions(&vertex_attribute_descs);
 
         // Describes the kind of input geometry that will be drawn from the vertices and if primtive
         // restart is enabled.
         // Reusing vertices is a pretty standard optimization, so primtive restart
-        let input_assembly_info = PipelineInputAssemblyStateCreateInfo::builder()
+        let input_assembly_info = PipelineInputAssemblyStateCreateInfo::default()
             .topology(PrimitiveTopology::TRIANGLE_LIST)
-            .primitive_restart_enable(false)
-            .build();
+            .primitive_restart_enable(false);
 
         let height = swapchain_properties.extent.height as f32;
         // TODO: Flip the viewport b/c I'm more familiar with OpenGL instead
@@ -1021,17 +1006,16 @@ impl Engine {
         };
         let scissors = [scissor];
 
-        let viewport_info = PipelineViewportStateCreateInfo::builder()
+        let viewport_info = PipelineViewportStateCreateInfo::default()
             .viewports(&viewports)
-            .scissors(&scissors)
-            .build();
+            .scissors(&scissors);
 
         // Can perform depth testing/face culling/scissor test at this stage.
         // Takes the geometry that is shaped by the vertices & turns it into a fragments that can be
         // colored.
         // Can configure to output fragments that fill entire polygons or just the edges (wireframe
         // shading).
-        let rasterizer_info = PipelineRasterizationStateCreateInfo::builder()
+        let rasterizer_info = PipelineRasterizationStateCreateInfo::default()
             .depth_clamp_enable(false)
             .rasterizer_discard_enable(false)
             .polygon_mode(PolygonMode::FILL)
@@ -1042,20 +1026,18 @@ impl Engine {
             .depth_bias_constant_factor(0.0)
             .depth_bias_clamp(0.0)
             .depth_bias_slope_factor(0.0)
-            .depth_clamp_enable(false) // Clamp anything that bleeds outside of 0.0 - 1.0 range
-            .build();
+            .depth_clamp_enable(false); // Clamp anything that bleeds outside of 0.0 - 1.0 range
 
         // An easy way to do some kind of anti-aliasing.
-        let multisampling_info = PipelineMultisampleStateCreateInfo::builder()
+        let multisampling_info = PipelineMultisampleStateCreateInfo::default()
             .sample_shading_enable(false)
             .rasterization_samples(SampleCountFlags::TYPE_1)
             .min_sample_shading(1.0)
             // .sample_mask() // null
             .alpha_to_coverage_enable(false)
-            .alpha_to_one_enable(false)
-            .build();
+            .alpha_to_one_enable(false);
 
-        let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
+        let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::default()
             .depth_test_enable(true)
             .depth_write_enable(true)
             .depth_compare_op(vk::CompareOp::LESS)
@@ -1064,10 +1046,9 @@ impl Engine {
             .max_depth_bounds(1.0)
             .stencil_test_enable(false)
             .front(Default::default())
-            .back(Default::default())
-            .build();
+            .back(Default::default());
 
-        let color_blending_attachment = PipelineColorBlendAttachmentState::builder()
+        let color_blending_attachment = PipelineColorBlendAttachmentState::default()
             .color_write_mask(ColorComponentFlags::RGBA)
             .blend_enable(false)
             .src_color_blend_factor(BlendFactor::ONE)
@@ -1075,27 +1056,24 @@ impl Engine {
             .color_blend_op(BlendOp::ADD)
             .src_alpha_blend_factor(BlendFactor::ONE)
             .dst_alpha_blend_factor(BlendFactor::ZERO)
-            .alpha_blend_op(BlendOp::ADD)
-            .build();
+            .alpha_blend_op(BlendOp::ADD);
         let color_blend_attachments = [color_blending_attachment];
 
-        let color_blending_info = PipelineColorBlendStateCreateInfo::builder()
+        let color_blending_info = PipelineColorBlendStateCreateInfo::default()
             .logic_op_enable(false)
             .logic_op(LogicOp::COPY)
             .attachments(&color_blend_attachments)
-            .blend_constants([0.0, 0.0, 0.0, 0.0])
-            .build();
+            .blend_constants([0.0, 0.0, 0.0, 0.0]);
 
         let layout = {
             let layouts = [descriptor_set_layout];
-            let layout_info = PipelineLayoutCreateInfo::builder()
-                .set_layouts(&layouts)
-                .build();
+            let layout_info = PipelineLayoutCreateInfo::default()
+                .set_layouts(&layouts);
 
             unsafe { device.create_pipeline_layout(&layout_info, None).unwrap() }
         };
 
-        let pipeline_info = GraphicsPipelineCreateInfo::builder()
+        let pipeline_info = GraphicsPipelineCreateInfo::default()
             .stages(&shader_states_info)
             .vertex_input_state(&vertex_input_info)
             .input_assembly_state(&input_assembly_info)
@@ -1106,8 +1084,7 @@ impl Engine {
             .color_blend_state(&color_blending_info)
             .layout(layout)
             .render_pass(render_pass)
-            .subpass(0)
-            .build();
+            .subpass(0);
         let pipeline_infos = [pipeline_info];
 
         let pipeline = unsafe {
@@ -1131,16 +1108,15 @@ impl Engine {
         swapchain_properties: SwapchainProperties,
         depth_format: Format,
     ) -> RenderPass {
-        let color_attachment_desc = AttachmentDescription::builder()
+        let color_attachment_desc = AttachmentDescription::default()
             .format(swapchain_properties.format.format)
             .samples(SampleCountFlags::TYPE_1)
             .load_op(AttachmentLoadOp::CLEAR)
             .store_op(AttachmentStoreOp::STORE)
             .initial_layout(ImageLayout::UNDEFINED)
-            .final_layout(ImageLayout::PRESENT_SRC_KHR)
-            .build();
+            .final_layout(ImageLayout::PRESENT_SRC_KHR);
 
-        let depth_attachment_desc = AttachmentDescription::builder()
+        let depth_attachment_desc = AttachmentDescription::default()
             .format(depth_format)
             .samples(SampleCountFlags::TYPE_1)
             .load_op(AttachmentLoadOp::CLEAR)
@@ -1148,29 +1124,25 @@ impl Engine {
             .stencil_load_op(AttachmentLoadOp::DONT_CARE)
             .stencil_store_op(AttachmentStoreOp::DONT_CARE)
             .initial_layout(ImageLayout::UNDEFINED)
-            .final_layout(ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-            .build();
+            .final_layout(ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
         let attachment_descs = [color_attachment_desc, depth_attachment_desc];
 
         // The first attachment is pretty much a color buffer
-        let color_attachment_ref = AttachmentReference::builder()
+        let color_attachment_ref = AttachmentReference::default()
             .attachment(0)
-            .layout(ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .build();
+            .layout(ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
         let attachment_refs = [color_attachment_ref];
 
-        let depth_attachment_ref = AttachmentReference::builder()
+        let depth_attachment_ref = AttachmentReference::default()
             .attachment(1)
-            .layout(ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-            .build();
+            .layout(ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
         // Every subpass references 1 or more attachment descriptions.
-        let subpass_desc = SubpassDescription::builder()
+        let subpass_desc = SubpassDescription::default()
             .pipeline_bind_point(PipelineBindPoint::GRAPHICS)
             .color_attachments(&attachment_refs)
-            .depth_stencil_attachment(&depth_attachment_ref)
-            .build();
+            .depth_stencil_attachment(&depth_attachment_ref);
         let subpass_descs = [subpass_desc];
 
         // Subpasses in a render pass automatically take care of image layout transitions.
@@ -1182,7 +1154,7 @@ impl Engine {
         //
         // The subpass here uses the COLOR_ATTACHMENT_OUTPUT. Another way is to make the semaphore
         // to PIPELINE_STAGE_TOP_OF_PIPE_BIT instead (TODO: Look into this and remove the subpass).
-        let subpass_dep = SubpassDependency::builder()
+        let subpass_dep = SubpassDependency::default()
             .src_subpass(SUBPASS_EXTERNAL)
             .dst_subpass(0)
             .src_stage_mask(PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
@@ -1190,15 +1162,13 @@ impl Engine {
             .dst_stage_mask(PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
             .dst_access_mask(
                 AccessFlags::COLOR_ATTACHMENT_READ | AccessFlags::COLOR_ATTACHMENT_WRITE,
-            )
-            .build();
+            );
         let subpass_deps = [subpass_dep];
 
-        let render_pass_info = RenderPassCreateInfo::builder()
+        let render_pass_info = RenderPassCreateInfo::default()
             .attachments(&attachment_descs)
             .subpasses(&subpass_descs)
-            .dependencies(&subpass_deps)
-            .build();
+            .dependencies(&subpass_deps);
 
         unsafe { device.create_render_pass(&render_pass_info, None).unwrap() }
     }
@@ -1217,15 +1187,14 @@ impl Engine {
             .into_iter()
             .map(|view| [*view, depth_texture.view])
             .map(|attachment| {
-                let framebuffer_info = FramebufferCreateInfo::builder()
+                let framebuffer_info = FramebufferCreateInfo::default()
                     .render_pass(render_pass)
                     .attachments(&attachment)
                     .width(swapchain_properties.extent.width)
                     .height(swapchain_properties.extent.height)
                     // since we only have 1 layer defined in the swapchain, the framebuffer
                     // must also only define 1 layer.
-                    .layers(1)
-                    .build();
+                    .layers(1);
 
                 unsafe { device.create_framebuffer(&framebuffer_info, None).unwrap() }
             })
@@ -1311,7 +1280,7 @@ impl Engine {
         );
 
         let sampler = {
-            let sampler_info = vk::SamplerCreateInfo::builder()
+            let sampler_info = vk::SamplerCreateInfo::default()
                 .mag_filter(vk::Filter::LINEAR)
                 .min_filter(vk::Filter::LINEAR)
                 .address_mode_u(vk::SamplerAddressMode::REPEAT)
@@ -1326,8 +1295,7 @@ impl Engine {
                 .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
                 .mip_lod_bias(0.0)
                 .min_lod(0.0)
-                .max_lod(0.0)
-                .build();
+                .max_lod(0.0);
 
             unsafe { device.create_sampler(&sampler_info, None).unwrap() }
         };
@@ -1348,7 +1316,7 @@ impl Engine {
         tiling: ImageTiling,
         usage: ImageUsageFlags,
     ) -> (Image, DeviceMemory) {
-        let image_info = ImageCreateInfo::builder()
+        let image_info = ImageCreateInfo::default()
             // By declaring the image type as 2D, we access coordinates via x & y
             .image_type(ImageType::TYPE_2D)
             .extent(Extent3D {
@@ -1368,8 +1336,7 @@ impl Engine {
             .usage(usage)
             .sharing_mode(SharingMode::EXCLUSIVE)
             .samples(SampleCountFlags::TYPE_1)
-            .flags(ImageCreateFlags::empty()) // TODO: Look into this when I want to use a terrain.
-            .build();
+            .flags(ImageCreateFlags::empty()); // TODO: Look into this when I want to use a terrain.
 
         let image = unsafe {
             vk_context
@@ -1387,10 +1354,9 @@ impl Engine {
             mem_properties,
         );
 
-        let alloc_info = MemoryAllocateInfo::builder()
+        let alloc_info = MemoryAllocateInfo::default()
             .allocation_size(mem_requirements.size)
-            .memory_type_index(mem_type_index)
-            .build();
+            .memory_type_index(mem_type_index);
 
         let memory = unsafe {
             let mem = vk_context
@@ -1454,7 +1420,7 @@ impl Engine {
                 ImageAspectFlags::COLOR
             };
 
-            let barrier = ImageMemoryBarrier::builder()
+            let barrier = ImageMemoryBarrier::default()
                 .old_layout(old_layout)
                 .new_layout(new_layout)
                 .src_queue_family_index(QUEUE_FAMILY_IGNORED)
@@ -1468,8 +1434,7 @@ impl Engine {
                     layer_count: 1,
                 })
                 .src_access_mask(src_access_mask)
-                .dst_access_mask(dst_access_mask)
-                .build();
+                .dst_access_mask(dst_access_mask);
 
             let barriers = [barrier];
             unsafe {
@@ -1495,7 +1460,7 @@ impl Engine {
         extent: Extent2D,
     ) {
         Self::execute_one_time_commands(device, command_pool, transition_queue, |command_buffer| {
-            let region = BufferImageCopy::builder()
+            let region = BufferImageCopy::default()
                 .buffer_offset(0) // Where does the pixel data actually start?
                 .buffer_row_length(0)
                 .buffer_image_height(0)
@@ -1510,8 +1475,7 @@ impl Engine {
                     width: extent.width,
                     height: extent.height,
                     depth: 1,
-                })
-                .build();
+                });
 
             let regions = [region];
             unsafe {
@@ -1662,11 +1626,10 @@ impl Engine {
         executor: T,
     ) {
         let command_buffer = {
-            let alloc_info = CommandBufferAllocateInfo::builder()
+            let alloc_info = CommandBufferAllocateInfo::default()
                 .level(CommandBufferLevel::PRIMARY)
                 .command_pool(command_pool)
-                .command_buffer_count(1)
-                .build();
+                .command_buffer_count(1);
 
             unsafe { device.allocate_command_buffers(&alloc_info).unwrap()[0] }
         };
@@ -1675,9 +1638,8 @@ impl Engine {
 
         // Begin recording
         {
-            let begin_info = CommandBufferBeginInfo::builder()
-                .flags(CommandBufferUsageFlags::ONE_TIME_SUBMIT)
-                .build();
+            let begin_info = CommandBufferBeginInfo::default()
+                .flags(CommandBufferUsageFlags::ONE_TIME_SUBMIT);
 
             unsafe {
                 device
@@ -1692,9 +1654,8 @@ impl Engine {
         unsafe { device.end_command_buffer(command_buffer).unwrap() };
 
         {
-            let submit_info = SubmitInfo::builder()
-                .command_buffers(&command_buffers)
-                .build();
+            let submit_info = SubmitInfo::default()
+                .command_buffers(&command_buffers);
 
             let submit_infos = [submit_info];
 
@@ -1720,11 +1681,10 @@ impl Engine {
         mem_properties: MemoryPropertyFlags,
     ) -> (Buffer, DeviceMemory, DeviceSize) {
         let buffer = {
-            let buffer_info = BufferCreateInfo::builder()
+            let buffer_info = BufferCreateInfo::default()
                 .size(size)
                 .usage(usage)
-                .sharing_mode(SharingMode::EXCLUSIVE)
-                .build();
+                .sharing_mode(SharingMode::EXCLUSIVE);
 
             unsafe {
                 vk_context
@@ -1745,10 +1705,9 @@ impl Engine {
                 vk_context.get_mem_properties(),
                 mem_properties,
             );
-            let alloc_info = MemoryAllocateInfo::builder()
+            let alloc_info = MemoryAllocateInfo::default()
                 .allocation_size(mem_requirements.size)
-                .memory_type_index(mem_type)
-                .build();
+                .memory_type_index(mem_type);
 
             unsafe {
                 vk_context
@@ -1840,10 +1799,9 @@ impl Engine {
         queue_families_indices: QueueFamiliesIndices,
         create_flags: CommandPoolCreateFlags,
     ) -> CommandPool {
-        let command_pool_info = CommandPoolCreateInfo::builder()
+        let command_pool_info = CommandPoolCreateInfo::default()
             .queue_family_index(queue_families_indices.graphics_index)
-            .flags(create_flags)
-            .build();
+            .flags(create_flags);
 
         unsafe {
             device
@@ -1865,11 +1823,10 @@ impl Engine {
         descriptor_sets: &[DescriptorSet],
         graphics_pipeline: Pipeline,
     ) -> Vec<CommandBuffer> {
-        let allocate_info = CommandBufferAllocateInfo::builder()
+        let allocate_info = CommandBufferAllocateInfo::default()
             .command_pool(pool)
             .level(CommandBufferLevel::PRIMARY)
-            .command_buffer_count(framebuffers.len() as u32)
-            .build();
+            .command_buffer_count(framebuffers.len() as u32);
 
         let buffers = unsafe { device.allocate_command_buffers(&allocate_info).unwrap() };
 
@@ -1879,9 +1836,8 @@ impl Engine {
 
             // Begin the command buffer
             {
-                let command_buffer_begin_info = CommandBufferBeginInfo::builder()
-                    .flags(CommandBufferUsageFlags::SIMULTANEOUS_USE)
-                    .build();
+                let command_buffer_begin_info = CommandBufferBeginInfo::default()
+                    .flags(CommandBufferUsageFlags::SIMULTANEOUS_USE);
                 unsafe {
                     device
                         .begin_command_buffer(buffer, &command_buffer_begin_info)
@@ -1905,15 +1861,14 @@ impl Engine {
                     },
                 ];
 
-                let render_pass_begin_info = RenderPassBeginInfo::builder()
+                let render_pass_begin_info = RenderPassBeginInfo::default()
                     .render_pass(render_pass)
                     .framebuffer(framebuffer)
                     .render_area(Rect2D {
                         offset: Offset2D { x: 0, y: 0 },
                         extent: swapchain_properties.extent,
                     })
-                    .clear_values(&clear_values)
-                    .build();
+                    .clear_values(&clear_values);
 
                 unsafe {
                     device.cmd_begin_render_pass(
@@ -1968,19 +1923,18 @@ impl Engine {
 
         for _ in 0..MAX_FRAMES_IN_FLIGHT {
             let image_available_semaphore = {
-                let semaphore_info = SemaphoreCreateInfo::builder().build();
+                let semaphore_info = SemaphoreCreateInfo::default();
                 unsafe { device.create_semaphore(&semaphore_info, None).unwrap() }
             };
 
             let render_finished_semaphore = {
-                let semaphore_info = SemaphoreCreateInfo::builder().build();
+                let semaphore_info = SemaphoreCreateInfo::default();
                 unsafe { device.create_semaphore(&semaphore_info, None).unwrap() }
             };
 
             let in_flight_fence = {
-                let fence_info = FenceCreateInfo::builder()
-                    .flags(FenceCreateFlags::SIGNALED)
-                    .build();
+                let fence_info = FenceCreateInfo::default()
+                    .flags(FenceCreateFlags::SIGNALED);
                 unsafe { device.create_fence(&fence_info, None).unwrap() }
             };
 

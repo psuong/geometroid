@@ -1,16 +1,11 @@
 use ash::{
-    extensions::khr::{Surface, Win32Surface},
+    khr::surface,
     vk::{
         self, ColorSpaceKHR, Extent2D, Format, PhysicalDevice, PresentModeKHR,
         SurfaceCapabilitiesKHR, SurfaceFormatKHR, SurfaceKHR,
     },
     Device,
 };
-
-/// Get required extensions on Windows.
-pub fn required_extension_names() -> Vec<*const i8> {
-    vec![Surface::name().as_ptr(), Win32Surface::name().as_ptr()]
-}
 
 #[derive(Clone, Copy, Debug)]
 pub struct QueueFamiliesIndices {
@@ -78,7 +73,7 @@ pub struct SwapchainSupportDetails {
 }
 
 impl SwapchainSupportDetails {
-    pub fn new(device: PhysicalDevice, surface: &Surface, surface_khr: SurfaceKHR) -> Self {
+    pub fn new(device: PhysicalDevice, surface: &surface::Instance, surface_khr: SurfaceKHR) -> Self {
         let capabilities = unsafe {
             surface
                 .get_physical_device_surface_capabilities(device, surface_khr)
@@ -110,7 +105,7 @@ impl SwapchainSupportDetails {
     ) -> SwapchainProperties {
         let format = Self::choose_swapchain_surface_format(&self.formats);
         let present_mode = Self::choose_swapchain_surface_present_mode(&self.present_modes);
-        let extent = Self::choose_swapchain_extent(&self.capabilities, &preferred_dimensions);
+        let extent = Self::choose_swapchain_extent(self.capabilities, &preferred_dimensions);
         SwapchainProperties {
             format,
             present_mode,
@@ -165,7 +160,7 @@ impl SwapchainSupportDetails {
     /// upscale it.
     /// TODO: Definitely try implementing FSR :)
     fn choose_swapchain_extent(
-        capabilities: &SurfaceCapabilitiesKHR,
+        capabilities: SurfaceCapabilitiesKHR,
         preferred_dimensions: &[u32; 2],
     ) -> Extent2D {
         // Pick the animation studio.

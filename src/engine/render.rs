@@ -67,11 +67,10 @@ impl Vertex {
     /// data entries and whether to move to the next data entry after each
     /// vertex or after each instance.
     pub fn get_binding_description() -> VertexInputBindingDescription {
-        VertexInputBindingDescription::builder()
+        VertexInputBindingDescription::default()
             .binding(0)
             .stride(mem::size_of::<Vertex>() as u32)
             .input_rate(VertexInputRate::VERTEX)
-            .build()
     }
 
     // TODO: Update doc strings
@@ -80,33 +79,29 @@ impl Vertex {
     /// description. We have two attributes, position and color, so we need
     /// two attribute description structs.
     pub fn get_attribute_descriptions() -> [VertexInputAttributeDescription; 4] {
-        let position_desc = VertexInputAttributeDescription::builder()
+        let position_desc = VertexInputAttributeDescription::default()
             .binding(0)
             .location(0)
             .format(Format::R32G32B32_SFLOAT)
-            .offset(offset_of!(Vertex, position) as u32)
-            .build();
+            .offset(offset_of!(Vertex, position) as u32);
 
-        let normal_desc = VertexInputAttributeDescription::builder()
+        let normal_desc = VertexInputAttributeDescription::default()
             .binding(0)
             .location(1)
             .format(Format::R32G32B32_SFLOAT)
-            .offset(offset_of!(Vertex, normal) as u32)
-            .build();
+            .offset(offset_of!(Vertex, normal) as u32);
 
-        let color_desc = VertexInputAttributeDescription::builder()
+        let color_desc = VertexInputAttributeDescription::default()
             .binding(0)
             .location(2)
             .format(Format::R32G32B32_SFLOAT)
-            .offset(offset_of!(Vertex, color) as u32)
-            .build();
+            .offset(offset_of!(Vertex, color) as u32);
 
-        let tex_coord_desc = VertexInputAttributeDescription::builder()
+        let tex_coord_desc = VertexInputAttributeDescription::default()
             .binding(0)
             .location(3)
             .format(Format::R32G32_SFLOAT)
-            .offset(offset_of!(Vertex, uv) as u32)
-            .build();
+            .offset(offset_of!(Vertex, uv) as u32);
 
         [position_desc, normal_desc, color_desc, tex_coord_desc]
     }

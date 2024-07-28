@@ -5,8 +5,8 @@ use env_logger::{Builder, Target};
 use log::LevelFilter;
 use winit::{
     dpi::PhysicalSize,
-    event::{Event, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
+    event::{Event, MouseScrollDelta, WindowEvent},
+    event_loop::EventLoop,
     window::WindowBuilder,
 };
 
@@ -23,9 +23,9 @@ fn init_logger(target: Target) {
 fn main() {
     init_logger(Target::Stdout);
 
-    let event_loop = EventLoop::new();
+    let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new()
-        .with_title("Geometroid")
+        .with_title("Phylum")
         .with_inner_size(PhysicalSize::new(WIDTH, HEIGHT))
         .build(&event_loop)
         .unwrap();
@@ -33,28 +33,44 @@ fn main() {
     let mut engine = Engine::new(&window);
     let mut dirty_swapchain = false;
 
-    event_loop.run(move |event, _, control_flow| {
-        *control_flow = ControlFlow::Poll;
-
+    let _ = event_loop.run(move |event, elwt| {
         match event {
-            Event::MainEventsCleared => {
-                if dirty_swapchain {
-                    let size = window.inner_size();
-                    println!("{} {}", size.width, size.height);
-                    if size.width > 0 && size.height > 0 {
-                        engine.recreate_swapchain();
-                    } else {
-                        return;
+            Event::NewEvents(_) => {
+                log::warn!("Use this to reset inputs")
+            }
+            Event::AboutToWait => {
+                // TODO: Handle mouse inputs
+                // Render
+                {
+                    if dirty_swapchain {
+                        let size = window.inner_size();
+                        if size.width > 0 && size.height > 0 {
+                            engine.recreate_swapchain();
+                        } else {
+                            return;
+                        }
                     }
+                    dirty_swapchain = engine.draw_frame();
                 }
-                dirty_swapchain = engine.draw_frame();
             }
             Event::WindowEvent { event, .. } => match event {
-                WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
-                WindowEvent::Resized { .. } => dirty_swapchain = true,
+                WindowEvent::CloseRequested => elwt.exit(),
+                WindowEvent::Resized(..) => dirty_swapchain = true,
+                WindowEvent::CursorMoved { position, .. } => {
+                    log::warn!("Cursor moved not implemented!");
+                    // let position: (i32, i32) = position.into();
+                    // cursor_position = Some([position.0, position.1]);
+                }
+                WindowEvent::MouseWheel {
+                    delta: MouseScrollDelta::LineDelta(_, _v_lines),
+                    ..
+                } => {
+                    // wheel_delta = Some(v_lines);
+                    log::warn!("Wheel movement not implemented!");
+                }
                 _ => (),
             },
-            Event::LoopDestroyed => engine.wait_gpu_idle(),
+            Event::LoopExiting => engine.wait_gpu_idle(),
             _ => (),
         }
     });
