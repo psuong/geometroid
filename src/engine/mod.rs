@@ -36,7 +36,8 @@ use ash::{
     },
     Device, Entry, Instance,
 };
-use cgmath::{vec2, vec3, Deg, Matrix4, Point3, Vector3};
+use cgmath::{vec2, vec3, Deg, Matrix4, Point3, Vector3, Zero};
+use mesh_builder::MeshBuilder;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::{
     ffi::{CStr, CString}, mem::{align_of, size_of}, panic, path::Path, time::Instant
@@ -186,7 +187,12 @@ impl Engine {
 
         let texture = Self::create_texture_image(&vk_context, command_pool, graphics_queue);
 
-        let (vertices, indices) = Self::load_model();
+        // TODO: create entities to load
+        let mut mesh_builder = MeshBuilder::with_capacity(24);
+        mesh_builder.push_box(Vector3::zero(), 1.0, 1.0, 1.0, Vector3::new(1.0, 1.0, 1.0), true);
+        let (vertices, indices) = (mesh_builder.vertices, mesh_builder.indices);
+
+        // let (vertices, indices) = Self::load_model();
         let (vertex_buffer, vertex_buffer_memory) = Self::create_vertex_buffer(
             &vk_context,
             transient_command_pool,
