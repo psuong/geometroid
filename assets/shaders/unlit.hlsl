@@ -4,12 +4,12 @@
 struct VSInput {
     [[vk::location(0)]] float3 position : POSITION0;
     [[vk::location(1)]] float3 normal: NORMAL0;
-    [[vk::location(2)]] float3 color : COLOR0;
+    [[vk::location(2)]] float4 color : COLOR0;
     [[vk::location(3)]] float2 uv0 : TEXCOORD0;
 };
 
 struct VSOutput {
-    float3 color : COLOR0;
+    float4 color : COLOR0;
     float2 uv : TEXCOORD0;
     float3 normal: NORMAL0;
     float4 positionWS : SV_POSITION;
@@ -43,7 +43,8 @@ VSOutput vert(VSInput input) {
 
 half4 frag(in VSOutput input) : SV_TARGET {
     float4 textureColor =  textureMap.Sample(sampler_TextureMap, input.uv);
-    float4 transformedColor = textureColor * float4(input.color, 1);
+    textureColor = 1.0;
+    float4 transformedColor = textureColor * input.color;
     return transformedColor;
 }
 

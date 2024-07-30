@@ -3,7 +3,7 @@ use std::mem;
 use ash::vk::{
     Format, VertexInputAttributeDescription, VertexInputBindingDescription, VertexInputRate,
 };
-use cgmath::{Vector2, Vector3};
+use cgmath::{Vector2, Vector3, Vector4};
 use memoffset::offset_of;
 
 // pub const VERTICES: [Vertex; 8] = [
@@ -57,7 +57,7 @@ use memoffset::offset_of;
 pub struct Vertex {
     pub position: Vector3<f32>,
     pub normal: Vector3<f32>,
-    pub color: Vector3<f32>,
+    pub color: Vector4<f32>,
     pub uv: Vector2<f32>,
 }
 
@@ -94,7 +94,7 @@ impl Vertex {
         let color_desc = VertexInputAttributeDescription::default()
             .binding(0)
             .location(2)
-            .format(Format::R32G32B32_SFLOAT)
+            .format(Format::R32G32B32A32_SFLOAT)
             .offset(offset_of!(Vertex, color) as u32);
 
         let tex_coord_desc = VertexInputAttributeDescription::default()

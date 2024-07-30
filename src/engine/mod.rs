@@ -36,7 +36,7 @@ use ash::{
     },
     Device, Entry, Instance,
 };
-use cgmath::{vec2, vec3, Deg, Matrix4, Point3, Vector3, Zero};
+use cgmath::{vec2, vec3, vec4, Deg, Matrix4, Point3, Vector3, Vector4, Zero};
 use mesh_builder::MeshBuilder;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::{
@@ -189,7 +189,8 @@ impl Engine {
 
         // TODO: create entities to load
         let mut mesh_builder = MeshBuilder::with_capacity(24);
-        mesh_builder.push_box(Vector3::zero(), 1.0, 1.0, 1.0, Vector3::new(1.0, 1.0, 1.0), true);
+        // mesh_builder.push_box(Vector3::zero(), 1.0, 1.0, 1.0, Vector4::new(1.0, 1.0, 1.0, 1.0), true);
+        mesh_builder.push_sphere(2.0, 20);
         let (vertices, indices) = (mesh_builder.vertices, mesh_builder.indices);
 
         // let (vertices, indices) = Self::load_model();
@@ -2011,7 +2012,7 @@ impl Engine {
                 position: vec3(x, y, z),
                 uv: vec2(u, 1.0 - v),
                 normal: vec3(0.0, 0.0, 0.0),
-                color: vec3(1.0, 1.0, 1.0),
+                color: vec4(1.0, 1.0, 1.0, 1.0),
             };
             vertices.push(vertex);
         }
