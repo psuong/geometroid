@@ -1,5 +1,5 @@
-use std::{f32::consts::PI, u16};
 use cgmath::{InnerSpace, Vector2, Vector3, Vector4, Zero};
+use std::{f32::consts::PI, u16};
 
 use super::render::Vertex;
 
@@ -9,6 +9,47 @@ pub struct MeshBuilder {
 }
 
 impl MeshBuilder {
+    fn push_sphere_rings_with_triangles(
+        &mut self,
+        segments: i32,
+        center: Vector3<f32>,
+        radius: f32,
+        v: f32,
+        color: Vector4<f32>,
+        build_triangles: bool,
+    ) {
+        let angle_slice = PI * 2.0 / segments as f32;
+        for i in 0..segments + 1 {
+            let angle = angle_slice * i as f32;
+            let unit_position = Vector3::new(angle.cos(), 0.0, angle.sin());
+            let vertex_position = center + unit_position * radius;
+
+            self.push_vertex(Vertex {
+                position: vertex_position,
+                normal: vertex_position.normalize(),
+                color,
+                uv: Vector2::new(i as f32 / segments as f32, v),
+            });
+
+            if build_triangles && i > 0 {
+                let base_index = (self.vertices.len() - 1) as u32;
+                let verts_per_row = segments + 1;
+                let first_index = base_index;
+                let second_index = base_index - 1;
+                let third_index = base_index - (verts_per_row as u32);
+                let fourth_index = third_index - 1;
+
+                self.indices.push(first_index);
+                self.indices.push(third_index);
+                self.indices.push(second_index);
+
+                self.indices.push(third_index);
+                self.indices.push(fourth_index);
+                self.indices.push(second_index);
+            }
+        }
+    }
+
     /// Creates a new mesh builder allocating a Vector of vertices and indices.
     /// Note: for every 4 vertices (quad), you have 6 indices
     /// # Arguments
@@ -47,21 +88,21 @@ impl MeshBuilder {
             position: offset + length,
             normal,
             color,
-            uv: Vector2::new(0.0 as f32, 1.0 as f32)
+            uv: Vector2::new(0.0 as f32, 1.0 as f32),
         });
 
         self.vertices.push(Vertex {
             position: offset + width + length,
             normal,
             color,
-            uv: Vector2::new(1.0 as f32, 1.0 as f32)
+            uv: Vector2::new(1.0 as f32, 1.0 as f32),
         });
 
         self.vertices.push(Vertex {
             position: offset + width,
             normal,
             color,
-            uv: Vector2::new(1.0 as f32, 0.0 as f32)
+            uv: Vector2::new(1.0 as f32, 0.0 as f32),
         });
 
         let base_index = (self.vertices.len() - 4) as u32;
@@ -75,7 +116,15 @@ impl MeshBuilder {
         self
     }
 
-    pub fn push_box(&mut self, position: Vector3<f32>, length: f32, width: f32, height: f32, color: Vector4<f32>, center_as_pivot: bool) -> &MeshBuilder {
+    pub fn push_box(
+        &mut self,
+        position: Vector3<f32>,
+        length: f32,
+        width: f32,
+        height: f32,
+        color: Vector4<f32>,
+        center_as_pivot: bool,
+    ) -> &MeshBuilder {
         let up = Vector3::unit_y() * height;
         let right = Vector3::unit_x() * width;
         let forward = Vector3::unit_z() * length;
@@ -98,50 +147,22 @@ impl MeshBuilder {
         self
     }
 
-    pub fn push_sphere_rings(&mut self, segments: i32, center: Vector3<f32>, radius: f32, v: f32, color: Vector4<f32>) {
-        let angle_slice = PI * 2.0 / segments as f32;
-        for i in 0..segments {
-            let angle = angle_slice * i as f32;
-            let unit_position = Vector3::new(angle.cos(), 0.0, angle.sin());
-            let vertex_position = center + unit_position * radius;
-
-            self.push_vertex(Vertex {
-                position: vertex_position,
-                normal: vertex_position.normalize(),
-                color,
-                uv: Vector2::new(i as f32 / segments as f32, v)
-            });
-
-            if i > 0 {
-                let base_index = (self.vertices.len() - 1) as u32;
-                let verts_per_row = segments + 1;
-                let first_index = base_index;
-                let second_index = base_index - 1;
-                log::info!("{}, {}, i: {}", verts_per_row, base_index, i);
-                let third_index = base_index - (verts_per_row as u32);
-                let fourth_index = third_index - 1;
-
-                self.indices.push(first_index);
-                self.indices.push(third_index);
-                self.indices.push(second_index);
-
-                self.indices.push(third_index);
-                self.indices.push(fourth_index);
-                self.indices.push(second_index);
-            }
-        }
-    }
-
-    pub fn push_sphere(&mut self, radius: f32, radial_segments: i32) -> &MeshBuilder{
+    pub fn push_sphere(&mut self, radius: f32, radial_segments: i32) -> &MeshBuilder {
         let height_segments = radial_segments / 2;
         let angle_slice = std::f32::consts::PI / height_segments as f32;
-
-        for i in 0..height_segments {
+        for i in 0..height_segments + 1 {
             let new_angle = angle_slice * i as f32;
             let center = Vector3::new(0.0, (new_angle).cos() * -radius, 0.0);
             let sphere_radius = new_angle.sin() * radius;
             let v = i as f32 / height_segments as f32;
-            self.push_sphere_rings(radial_segments, center, sphere_radius, v, Vector4::new(1.0, 1.0, 1.0, 1.0));
+            self.push_sphere_rings_with_triangles(
+                radial_segments,
+                center,
+                sphere_radius,
+                v,
+                Vector4::new(1.0, 1.0, 1.0, 1.0),
+                i > 0,
+            );
         }
         self
     }

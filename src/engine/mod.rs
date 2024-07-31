@@ -190,7 +190,7 @@ impl Engine {
         // TODO: create entities to load
         let mut mesh_builder = MeshBuilder::with_capacity(24);
         // mesh_builder.push_box(Vector3::zero(), 1.0, 1.0, 1.0, Vector4::new(1.0, 1.0, 1.0, 1.0), true);
-        mesh_builder.push_sphere(2.0, 20);
+        mesh_builder.push_sphere(0.5, 50);
         let (vertices, indices) = (mesh_builder.vertices, mesh_builder.indices);
 
         // let (vertices, indices) = Self::load_model();
