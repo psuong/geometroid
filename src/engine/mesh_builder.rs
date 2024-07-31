@@ -1,4 +1,5 @@
-use cgmath::{InnerSpace, Vector2, Vector3, Vector4, Zero};
+// use cgmath::{InnerSpace, Vec2, Vector3, Vector4, Zero};
+use glam::{Vec2, Vec3, Vec4};
 use std::{f32::consts::PI, u16};
 
 use super::render::Vertex;
@@ -9,26 +10,39 @@ pub struct MeshBuilder {
 }
 
 impl MeshBuilder {
+    /// Creates a new mesh builder allocating a Vec of vertices and indices.
+    /// Note: for every 4 vertices (quad), you have 6 indices
+    /// # Arguments
+    ///
+    /// * `vertex_count` - The total number of vertices to allocate
+    pub fn with_capacity(vertex_count: u16) -> Self {
+        let vertices = Vec::with_capacity(vertex_count.into());
+        let index_count = (vertex_count / 4) * 6;
+        let indices = Vec::with_capacity(index_count.into());
+
+        MeshBuilder { vertices, indices }
+    }
+
     fn push_sphere_rings_with_triangles(
         &mut self,
         segments: i32,
-        center: Vector3<f32>,
+        center: Vec3,
         radius: f32,
         v: f32,
-        color: Vector4<f32>,
+        color: Vec4,
         build_triangles: bool,
     ) {
         let angle_slice = PI * 2.0 / segments as f32;
         for i in 0..segments + 1 {
             let angle = angle_slice * i as f32;
-            let unit_position = Vector3::new(angle.cos(), 0.0, angle.sin());
+            let unit_position = Vec3::new(angle.cos(), 0.0, angle.sin());
             let vertex_position = center + unit_position * radius;
 
             self.push_vertex(Vertex {
                 position: vertex_position,
                 normal: vertex_position.normalize(),
                 color,
-                uv: Vector2::new(i as f32 / segments as f32, v),
+                uv: Vec2::new(i as f32 / segments as f32, v),
             });
 
             if build_triangles && i > 0 {
@@ -50,19 +64,6 @@ impl MeshBuilder {
         }
     }
 
-    /// Creates a new mesh builder allocating a Vector of vertices and indices.
-    /// Note: for every 4 vertices (quad), you have 6 indices
-    /// # Arguments
-    ///
-    /// * `vertex_count` - The total number of vertices to allocate
-    pub fn with_capacity(vertex_count: u16) -> Self {
-        let vertices = Vec::with_capacity(vertex_count.into());
-        let index_count = (vertex_count / 4) * 6;
-        let indices = Vec::with_capacity(index_count.into());
-
-        MeshBuilder { vertices, indices }
-    }
-
     pub fn push_vertex(&mut self, vertex: Vertex) -> &MeshBuilder {
         self.vertices.push(vertex);
         self
@@ -70,10 +71,10 @@ impl MeshBuilder {
 
     pub fn push_quad(
         &mut self,
-        offset: Vector3<f32>,
-        width: Vector3<f32>,
-        length: Vector3<f32>,
-        color: Vector4<f32>,
+        offset: Vec3,
+        width:  Vec3,
+        length: Vec3,
+        color:  Vec4,
     ) -> &MeshBuilder {
         let normal = width.cross(length).normalize();
 
@@ -81,28 +82,28 @@ impl MeshBuilder {
             position: offset,
             normal,
             color,
-            uv: Vector2::new(0.0 as f32, 0.0 as f32),
+            uv: Vec2::new(0.0 as f32, 0.0 as f32),
         });
 
         self.vertices.push(Vertex {
             position: offset + length,
             normal,
             color,
-            uv: Vector2::new(0.0 as f32, 1.0 as f32),
+            uv: Vec2::new(0.0 as f32, 1.0 as f32),
         });
 
         self.vertices.push(Vertex {
             position: offset + width + length,
             normal,
             color,
-            uv: Vector2::new(1.0 as f32, 1.0 as f32),
+            uv: Vec2::new(1.0 as f32, 1.0 as f32),
         });
 
         self.vertices.push(Vertex {
             position: offset + width,
             normal,
             color,
-            uv: Vector2::new(1.0 as f32, 0.0 as f32),
+            uv: Vec2::new(1.0 as f32, 0.0 as f32),
         });
 
         let base_index = (self.vertices.len() - 4) as u32;
@@ -118,21 +119,21 @@ impl MeshBuilder {
 
     pub fn push_box(
         &mut self,
-        position: Vector3<f32>,
+        position: Vec3,
         length: f32,
         width: f32,
         height: f32,
-        color: Vector4<f32>,
+        color: Vec4,
         center_as_pivot: bool,
     ) -> &MeshBuilder {
-        let up = Vector3::unit_y() * height;
-        let right = Vector3::unit_x() * width;
-        let forward = Vector3::unit_z() * length;
+        let up = Vec3::new(0.0, 1.0, 0.0) * height;
+        let right = Vec3::new(1.0, 0.0, 0.0) * width;
+        let forward = Vec3::new(0.0, 0.0, 1.0) * length;
 
         let (near_corner, far_corner) = if center_as_pivot {
             ((up + right + forward) / 2.0, -(up + right + forward) / 2.0)
         } else {
-            (Vector3::zero(), up + right + forward)
+            (Vec3::ZERO, up + right + forward)
         };
 
         let (near_corner, far_corner) = (near_corner + position, far_corner + position);
@@ -152,7 +153,7 @@ impl MeshBuilder {
         let angle_slice = std::f32::consts::PI / height_segments as f32;
         for i in 0..height_segments + 1 {
             let new_angle = angle_slice * i as f32;
-            let center = Vector3::new(0.0, (new_angle).cos() * -radius, 0.0);
+            let center = Vec3::new(0.0, (new_angle).cos() * -radius, 0.0);
             let sphere_radius = new_angle.sin() * radius;
             let v = i as f32 / height_segments as f32;
             self.push_sphere_rings_with_triangles(
@@ -160,7 +161,7 @@ impl MeshBuilder {
                 center,
                 sphere_radius,
                 v,
-                Vector4::new(1.0, 1.0, 1.0, 1.0),
+                Vec4::new(1.0, 1.0, 1.0, 1.0),
                 i > 0,
             );
         }
@@ -171,11 +172,11 @@ impl MeshBuilder {
     //     let bend_angle_rads = bend_angle_degs.to_radians();
     //     let bend_radius = height / bend_angle_rads;
     //     let angle_slice = bend_angle_rads / height_segments as f32;
-    //     let start_offset = Vector3::new(bend_radius, 0.0, 0.0);
-    //     let slope = Vector2::new(end_radius - start_radius, height);
+    //     let start_offset = Vec3::new(bend_radius, 0.0, 0.0);
+    //     let slope = Vec2::new(end_radius - start_radius, height);
 
     //     for i in 0..height_segments {
-    //         let center = Vector3::new((angle_slice * i as f32).cos(), 0.0, 0.0);
+    //         let center = Vec3::new((angle_slice * i as f32).cos(), 0.0, 0.0);
     //     }
 
     //     todo!("Finish");

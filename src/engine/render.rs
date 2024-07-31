@@ -3,7 +3,7 @@ use std::mem;
 use ash::vk::{
     Format, VertexInputAttributeDescription, VertexInputBindingDescription, VertexInputRate,
 };
-use cgmath::{Vector2, Vector3, Vector4};
+use glam::{Vec2, Vec3, Vec4};
 use memoffset::offset_of;
 
 // pub const VERTICES: [Vertex; 8] = [
@@ -55,10 +55,10 @@ use memoffset::offset_of;
 
 #[derive(Copy, Clone)]
 pub struct Vertex {
-    pub position: Vector3<f32>,
-    pub normal: Vector3<f32>,
-    pub color: Vector4<f32>,
-    pub uv: Vector2<f32>,
+    pub position: Vec3,
+    pub normal: Vec3,
+    pub color: Vec4,
+    pub uv: Vec2,
 }
 
 impl Vertex {

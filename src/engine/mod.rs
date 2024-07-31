@@ -20,27 +20,30 @@ use ash::{
         GraphicsPipelineCreateInfo, Image, ImageAspectFlags, ImageCreateFlags, ImageCreateInfo,
         ImageLayout, ImageMemoryBarrier, ImageSubresourceLayers, ImageSubresourceRange,
         ImageTiling, ImageType, ImageUsageFlags, ImageView, ImageViewCreateInfo, ImageViewType,
-        IndexType, InstanceCreateFlags, LogicOp, MemoryAllocateInfo,
-        MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements, Offset2D, Offset3D,
-        PhysicalDevice, PhysicalDeviceFeatures, PhysicalDeviceMemoryProperties, Pipeline,
-        PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState,
-        PipelineColorBlendStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineLayout,
-        PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo,
-        PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags,
-        PipelineVertexInputStateCreateInfo, PipelineViewportStateCreateInfo, PolygonMode,
-        PrimitiveTopology, Queue, QueueFlags, Rect2D, RenderPass, RenderPassBeginInfo,
-        RenderPassCreateInfo, SampleCountFlags, SemaphoreCreateInfo, ShaderStageFlags, SharingMode,
-        SubmitInfo, SubpassContents, SubpassDependency, SubpassDescription, SurfaceKHR,
-        SwapchainCreateInfoKHR, SwapchainKHR, Viewport, WriteDescriptorSet, QUEUE_FAMILY_IGNORED,
-        SUBPASS_EXTERNAL, TRUE,
+        IndexType, InstanceCreateFlags, LogicOp, MemoryAllocateInfo, MemoryMapFlags,
+        MemoryPropertyFlags, MemoryRequirements, Offset2D, Offset3D, PhysicalDevice,
+        PhysicalDeviceFeatures, PhysicalDeviceMemoryProperties, Pipeline, PipelineBindPoint,
+        PipelineCache, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo,
+        PipelineInputAssemblyStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo,
+        PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo,
+        PipelineShaderStageCreateInfo, PipelineStageFlags, PipelineVertexInputStateCreateInfo,
+        PipelineViewportStateCreateInfo, PolygonMode, PrimitiveTopology, Queue, QueueFlags, Rect2D,
+        RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags,
+        SemaphoreCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo, SubpassContents,
+        SubpassDependency, SubpassDescription, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR,
+        Viewport, WriteDescriptorSet, QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL, TRUE,
     },
     Device, Entry, Instance,
 };
-use cgmath::{vec2, vec3, vec4, Deg, Matrix4, Point3, Vector3, Vector4, Zero};
+use glam::{Mat4, Vec2, Vec3, Vec4};
 use mesh_builder::MeshBuilder;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::{
-    ffi::{CStr, CString}, mem::{align_of, size_of}, panic, path::Path, time::Instant
+    ffi::{CStr, CString},
+    mem::{align_of, size_of},
+    panic,
+    path::Path,
+    time::Instant,
 };
 use winit::window::Window;
 
@@ -512,14 +515,15 @@ impl Engine {
 
         let aspect = self.swapchain_properties.extent.width as f32
             / self.swapchain_properties.extent.height as f32;
+
         let ubo = UniformBufferObject {
-            model: Matrix4::from_angle_y(Deg(00.0 * elapsed)),
-            view: Matrix4::look_at_rh(
-                Point3::new(2.0, 2.0, 2.0),
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
+            model: Mat4::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), 0.0),
+            view: Mat4::look_at_rh(
+                Vec3::new(2.0, 2.0, 2.0),
+                Vec3::ZERO,
+                Vec3::new(0.0, 0.0, 1.0),
             ),
-            proj: cgmath::perspective(Deg(60.0), aspect, 0.1, 10.0),
+            proj: Mat4::perspective_rh(60.0_f32.to_radians(), aspect, 0.1, 10.0),
         };
 
         let ubos = [ubo];
@@ -938,8 +942,7 @@ impl Engine {
             .descriptor_type(DescriptorType::COMBINED_IMAGE_SAMPLER)
             .stage_flags(ShaderStageFlags::FRAGMENT);
         let bindings = [ubo_binding, sampler_binding];
-        let layout_info = DescriptorSetLayoutCreateInfo::default()
-            .bindings(&bindings);
+        let layout_info = DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
 
         unsafe {
             device
@@ -1074,8 +1077,7 @@ impl Engine {
 
         let layout = {
             let layouts = [descriptor_set_layout];
-            let layout_info = PipelineLayoutCreateInfo::default()
-                .set_layouts(&layouts);
+            let layout_info = PipelineLayoutCreateInfo::default().set_layouts(&layouts);
 
             unsafe { device.create_pipeline_layout(&layout_info, None).unwrap() }
         };
@@ -1645,8 +1647,8 @@ impl Engine {
 
         // Begin recording
         {
-            let begin_info = CommandBufferBeginInfo::default()
-                .flags(CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+            let begin_info =
+                CommandBufferBeginInfo::default().flags(CommandBufferUsageFlags::ONE_TIME_SUBMIT);
 
             unsafe {
                 device
@@ -1661,8 +1663,7 @@ impl Engine {
         unsafe { device.end_command_buffer(command_buffer).unwrap() };
 
         {
-            let submit_info = SubmitInfo::default()
-                .command_buffers(&command_buffers);
+            let submit_info = SubmitInfo::default().command_buffers(&command_buffers);
 
             let submit_infos = [submit_info];
 
@@ -1940,8 +1941,7 @@ impl Engine {
             };
 
             let in_flight_fence = {
-                let fence_info = FenceCreateInfo::default()
-                    .flags(FenceCreateFlags::SIGNALED);
+                let fence_info = FenceCreateInfo::default().flags(FenceCreateFlags::SIGNALED);
                 unsafe { device.create_fence(&fence_info, None).unwrap() }
             };
 
@@ -2009,10 +2009,10 @@ impl Engine {
             let v = coords[i * 2 + 1];
 
             let vertex = Vertex {
-                position: vec3(x, y, z),
-                uv: vec2(u, 1.0 - v),
-                normal: vec3(0.0, 0.0, 0.0),
-                color: vec4(1.0, 1.0, 1.0, 1.0),
+                position: Vec3::new(x, y, z),
+                uv: Vec2::new(u, 1.0 - v),
+                normal: Vec3::new(0.0, 0.0, 0.0),
+                color: Vec4::new(1.0, 1.0, 1.0, 1.0),
             };
             vertices.push(vertex);
         }

@@ -1,14 +1,14 @@
 use ash::vk::{DescriptorSetLayoutBinding, DescriptorType, ShaderStageFlags};
-use cgmath::Matrix4;
+use glam::Mat4;
 
 /// A descriptor layout specifies the types of resources that will be accessed. We need the
 /// model view projection matrix.
 #[derive(Clone, Copy)]
 #[allow(dead_code)]
 pub struct UniformBufferObject {
-    pub model: Matrix4<f32>,
-    pub view: Matrix4<f32>,
-    pub proj: Matrix4<f32>,
+    pub model: Mat4,
+    pub view: Mat4,
+    pub proj: Mat4,
 }
 
 impl UniformBufferObject {
