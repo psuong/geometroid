@@ -1,8 +1,10 @@
 mod common;
 mod engine;
 
+use chrono::Local;
 use env_logger::{Builder, Target};
 use log::LevelFilter;
+use std::{fs::File, io::Write};
 use winit::{
     dpi::PhysicalSize,
     event::{Event, MouseScrollDelta, WindowEvent},
@@ -17,11 +19,23 @@ fn init_logger(target: Target) {
     Builder::from_default_env()
         .target(target)
         .filter_level(LevelFilter::Info)
+        .format(|buf, record| {
+            writeln!(
+                buf,
+                "[{} {} {}:{}] {}",
+                Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
+                record.level(),
+                record.file().unwrap_or("unknown"),
+                record.line().unwrap_or(0),
+                record.args()
+            )
+        })
         .init();
 }
 
 fn main() {
-    init_logger(Target::Stdout);
+    let target = Box::new(File::create("geometroid.log").expect("Can't create file!"));
+    init_logger(Target::Pipe(target));
 
     let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new()

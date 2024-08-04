@@ -1,6 +1,6 @@
 // build.rs
 use std::{
-    ffi::OsStr, fs::{read_dir, read_to_string, File}, io::{Result, Write}, path::{Path, PathBuf}, process::{Command, Output}
+    env, ffi::OsStr, fs::{self, create_dir_all, read_dir, read_to_string, File}, io::{Result, Write}, path::{Path, PathBuf}, process::{Command, Output}
 };
 
 use yaml_rust2::YamlLoader;
@@ -43,7 +43,7 @@ fn main() {
     let source = Source::new();
     let shader_dir_path = source.shader_src();
 
-    let mut log_messages: Vec<String> = Vec::new();
+    let mut log_messages: Vec<String> = Vec::with_capacity(64);
 
     log_messages.push(format!("Root Directory: {}", source.root.to_str().unwrap()));
     log_messages.push(format!("Shader Directory: {}", source.shader_src().to_str().unwrap()));
@@ -65,8 +65,33 @@ fn main() {
 
     let current_dir = std::env::current_dir();
     log_messages.push(format!("Current build dir: {:?}", current_dir));
-    log_messages.push(std::env::var("OUT_DIR").unwrap());
 
+    let target_dir = env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "target".to_string());
+    let mut path_buffer = PathBuf::new();
+
+    path_buffer.push(source.root.to_str().unwrap());
+    path_buffer.push(target_dir);
+    path_buffer.push(env::var("PROFILE").unwrap_or_else(|_| "debug".to_string()));
+    path_buffer.push("assets");
+    path_buffer.push("shaders");
+
+    let _ = create_dir_all(path_buffer.as_path());
+    log_messages.push(format!("Target Dir: {}", path_buffer.display()));
+
+    // We have to copy our shaders to our target directory
+
+    read_dir(shader_dir_path.clone())
+        .unwrap()
+        .map(Result::unwrap)
+        .filter(|dir| dir.file_type().unwrap().is_file())
+        .filter(|dir| dir.path().extension() == Some(OsStr::new("spv")))
+        .for_each(|dir| {
+            let mut cloned = path_buffer.clone();
+            cloned.push(dir.file_name().to_str().unwrap());
+            let _ = fs::copy(&dir.path(), &cloned.as_path());
+        });
+
+    // TODO: Copy the textures and models.
     match write_messages_to_file(source.shader_log.clone(), &log_messages) {
         _ => {}
     };
@@ -115,7 +140,6 @@ fn compile_shader(
         .output();
 
     handle_shader_result(source.shader_log.clone(), result, log_messages);
-    // TODO: copy the assets directory to the build folder
 }
 
 /// Stores all log messages of the shader compilation pipeline.
