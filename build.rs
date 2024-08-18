@@ -79,7 +79,6 @@ fn main() {
     log_messages.push(format!("Target Dir: {}", path_buffer.display()));
 
     // We have to copy our shaders to our target directory
-
     read_dir(shader_dir_path.clone())
         .unwrap()
         .map(Result::unwrap)
@@ -88,13 +87,12 @@ fn main() {
         .for_each(|dir| {
             let mut cloned = path_buffer.clone();
             cloned.push(dir.file_name().to_str().unwrap());
-            let _ = fs::copy(&dir.path(), &cloned.as_path());
+            let _ = fs::copy(dir.path(), cloned.as_path());
         });
 
+    // We have to copy out textures to our target directory
     // TODO: Copy the textures and models.
-    match write_messages_to_file(source.shader_log.clone(), &log_messages) {
-        _ => {}
-    };
+    let _ = write_messages_to_file(source.shader_log.clone(), &log_messages);
 }
 
 /// Determines the stage to compile based on the shader\_stage. Stores all messages into the 
@@ -127,13 +125,13 @@ fn compile_shader(
         stage_entry_point));
 
     let result = dbg!(Command::new("dxc"))
-        .current_dir(&shader_dir_path)
+        .current_dir(shader_dir_path)
         .arg("-spirv")
         .arg("-T")
         .arg(stage_arg)
         .arg("-E")
         .arg(stage_entry_point)
-        .arg(&dir_path)
+        .arg(dir_path)
         .arg("-Fo")
         .arg(shader_name)
         .arg("-fspv-extension=SPV_EXT_descriptor_indexing")
