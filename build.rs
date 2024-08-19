@@ -1,6 +1,11 @@
 // build.rs
 use std::{
-    env, ffi::OsStr, fs::{self, create_dir_all, read_dir, read_to_string, File}, io::{Result, Write}, path::{Path, PathBuf}, process::{Command, Output}
+    env,
+    ffi::OsStr,
+    fs::{self, create_dir_all, read_dir, read_to_string, File},
+    io::{Result, Write},
+    path::{Path, PathBuf},
+    process::{Command, Output},
 };
 
 use yaml_rust2::YamlLoader;
@@ -8,13 +13,13 @@ use yaml_rust2::YamlLoader;
 /// Defines the Shader Stage to compile.
 enum ShaderStage {
     Vertex,
-    Fragment
+    Fragment,
 }
 
 struct Source {
     root: PathBuf,
     shader_log: PathBuf,
-    config: PathBuf
+    config: PathBuf,
 }
 
 impl Source {
@@ -22,7 +27,11 @@ impl Source {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let shader_log = root.clone().join("shader.log");
         let config = root.clone().join("build-config.yml");
-        Source { root, shader_log, config }
+        Source {
+            root,
+            shader_log,
+            config,
+        }
     }
 
     pub fn shader_src(&self) -> PathBuf {
@@ -46,7 +55,10 @@ fn main() {
     let mut log_messages: Vec<String> = Vec::with_capacity(64);
 
     log_messages.push(format!("Root Directory: {}", source.root.to_str().unwrap()));
-    log_messages.push(format!("Shader Directory: {}", source.shader_src().to_str().unwrap()));
+    log_messages.push(format!(
+        "Shader Directory: {}",
+        source.shader_src().to_str().unwrap()
+    ));
 
     read_dir(shader_dir_path.clone())
         .unwrap()
@@ -57,10 +69,24 @@ fn main() {
             let dir_path = dir.path();
             let file_stem = dir_path.file_stem().unwrap().to_str().unwrap();
             let frag_output_name = format!("{}-frag.spv", &file_stem);
-            compile_shader(ShaderStage::Fragment, &shader_dir_path, &dir_path, &frag_output_name, &source, &mut log_messages);
+            compile_shader(
+                ShaderStage::Fragment,
+                &shader_dir_path,
+                &dir_path,
+                &frag_output_name,
+                &source,
+                &mut log_messages,
+            );
 
             let vert_output_name = format!("{}-vert.spv", &file_stem);
-            compile_shader(ShaderStage::Vertex, &shader_dir_path, &dir_path, &vert_output_name, &source, &mut log_messages);
+            compile_shader(
+                ShaderStage::Vertex,
+                &shader_dir_path,
+                &dir_path,
+                &vert_output_name,
+                &source,
+                &mut log_messages,
+            );
         });
 
     let current_dir = std::env::current_dir();
@@ -95,7 +121,7 @@ fn main() {
     let _ = write_messages_to_file(source.shader_log.clone(), &log_messages);
 }
 
-/// Determines the stage to compile based on the shader\_stage. Stores all messages into the 
+/// Determines the stage to compile based on the shader\_stage. Stores all messages into the
 /// the log\_messages.
 ///
 /// # Arguments
@@ -112,17 +138,19 @@ fn compile_shader(
     dir_path: &PathBuf,
     shader_name: &str,
     source: &Source,
-    log_messages: &mut Vec<String>) {
-
+    log_messages: &mut Vec<String>,
+) {
     let (stage_entry_point, stage_arg) = match shader_stage {
         ShaderStage::Vertex => ("vert", "vs_6_0"),
         ShaderStage::Fragment => ("frag", "ps_6_0"),
     };
 
-    log_messages.push(format!("Compiling in directory: {}, with shader name: {}, with entry point: {}", 
+    log_messages.push(format!(
+        "Compiling in directory: {}, with shader name: {}, with entry point: {}",
         shader_dir_path.to_str().unwrap(),
-        shader_name, 
-        stage_entry_point));
+        shader_name,
+        stage_entry_point
+    ));
 
     let result = dbg!(Command::new("dxc"))
         .current_dir(shader_dir_path)
@@ -150,7 +178,8 @@ fn compile_shader(
 fn handle_shader_result(
     path_buffer: PathBuf,
     result: Result<Output>,
-    log_messages: &mut Vec<String>) {
+    log_messages: &mut Vec<String>,
+) {
     match result {
         Ok(output) => {
             if output.status.success() {
