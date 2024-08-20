@@ -1,6 +1,6 @@
 // use cgmath::{InnerSpace, Vec2, Vector3, Vector4, Zero};
 use glam::{Vec2, Vec3, Vec4};
-use std::{f32::consts::PI, u16};
+use std::f32::consts::PI;
 
 use super::render::Vertex;
 
@@ -82,28 +82,28 @@ impl MeshBuilder {
             position: offset,
             normal,
             color,
-            uv: Vec2::new(0.0 as f32, 0.0 as f32),
+            uv: Vec2::new(0.0_f32, 0.0_f32),
         });
 
         self.vertices.push(Vertex {
             position: offset + length,
             normal,
             color,
-            uv: Vec2::new(0.0 as f32, 1.0 as f32),
+            uv: Vec2::new(0.0_f32, 1.0_f32),
         });
 
         self.vertices.push(Vertex {
             position: offset + width + length,
             normal,
             color,
-            uv: Vec2::new(1.0 as f32, 1.0 as f32),
+            uv: Vec2::new(1.0_f32, 1.0_f32),
         });
 
         self.vertices.push(Vertex {
             position: offset + width,
             normal,
             color,
-            uv: Vec2::new(1.0 as f32, 0.0 as f32),
+            uv: Vec2::new(1.0_f32, 0.0_f32),
         });
 
         let base_index = (self.vertices.len() - 4) as u32;

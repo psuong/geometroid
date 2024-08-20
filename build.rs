@@ -141,8 +141,8 @@ fn main() {
             let _ = fs::copy(dir.path(), cloned.as_path());
         });
 
+    // TODO: Need to figure out asset packs
     // We have to copy out textures to our target directory
-    // TODO: Copy the textures and models.
     read_dir(source.model_src())
         .unwrap()
         .map(Result::unwrap)
@@ -254,9 +254,7 @@ fn handle_shader_result(
         }
         Err(error) => {
             log_messages.push(format!("Failed to compile shader due to: {}", error));
-            match write_messages_to_file(path_buffer, log_messages) {
-                _ => {}
-            }
+            let _ = write_messages_to_file(path_buffer, log_messages);
             panic!("Shader compilation failed, please see shader.log in the root directory!");
         }
     }
