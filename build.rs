@@ -24,18 +24,18 @@ enum AssetType {
 
 struct Source {
     root: PathBuf,
-    shader_log: PathBuf,
+    build_log: PathBuf,
     config: PathBuf,
 }
 
 impl Source {
     pub fn new() -> Self {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let shader_log = root.clone().join("shader.log");
+        let build_log = root.clone().join("build.log");
         let config = root.clone().join("build-config.yml");
         Source {
             root,
-            shader_log,
+            build_log,
             config,
         }
     }
@@ -123,7 +123,10 @@ fn main() {
     path_buffer.push(target_dir);
     path_buffer.push(env::var("PROFILE").unwrap_or_else(|_| "debug".to_string()));
     path_buffer.push("assets");
-    path_buffer.push("shaders");
+
+    create_directories(&mut path_buffer, AssetType::Shaders);
+    create_directories(&mut path_buffer, AssetType::Models);
+    create_directories(&mut path_buffer, AssetType::Textures);
 
     let _ = create_dir_all(path_buffer.as_path());
     log_messages.push(format!("Target Dir: {}", path_buffer.display()));
@@ -137,6 +140,7 @@ fn main() {
         })
         .for_each(|dir| {
             let mut cloned = path_buffer.clone();
+            cloned.push("shaders");
             cloned.push(dir.file_name().to_str().unwrap());
             let _ = fs::copy(dir.path(), cloned.as_path());
         });
@@ -151,8 +155,14 @@ fn main() {
         })
         .for_each(|dir| {
             let mut cloned = path_buffer.clone();
+            cloned.push("models");
             cloned.push(dir.file_name().to_str().unwrap());
             let _ = fs::copy(dir.path(), cloned.as_path());
+            log_messages.push(format!(
+                "Models: {}, {}",
+                dir.path().display(),
+                cloned.as_path().display()
+            ));
         });
 
     read_dir(source.texture_src())
@@ -163,11 +173,29 @@ fn main() {
         })
         .for_each(|dir| {
             let mut cloned = path_buffer.clone();
+            cloned.push("textures");
             cloned.push(dir.file_name().to_str().unwrap());
             let _ = fs::copy(dir.path(), cloned.as_path());
+            log_messages.push(format!(
+                "Textures: {}, {}",
+                dir.path().display(),
+                cloned.as_path().display()
+            ));
         });
 
-    let _ = write_messages_to_file(source.shader_log.clone(), &log_messages);
+    let _ = write_messages_to_file(source.build_log.clone(), &log_messages);
+}
+
+fn create_directories(path_buffer: &mut PathBuf, asset_type: AssetType) {
+    let asset = match asset_type {
+        AssetType::Shaders => "shaders",
+        AssetType::Models => "models",
+        AssetType::Textures => "textures",
+    };
+
+    path_buffer.push(asset);
+    let _ = create_dir_all(path_buffer.as_path());
+    path_buffer.pop();
 }
 
 /// Determines the stage to compile based on the shader\_stage. Stores all messages into the
@@ -214,7 +242,7 @@ fn compile_shader(
         .arg("-fspv-extension=SPV_EXT_descriptor_indexing")
         .output();
 
-    handle_shader_result(source.shader_log.clone(), result, log_messages);
+    handle_shader_result(source.build_log.clone(), result, log_messages);
 }
 
 /// Stores all log messages of the shader compilation pipeline.
