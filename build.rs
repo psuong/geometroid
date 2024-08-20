@@ -186,6 +186,12 @@ fn main() {
     let _ = write_messages_to_file(source.build_log.clone(), &log_messages);
 }
 
+/// Creates all directories for the executable given the asset type
+///
+/// # Arguments
+///
+/// * `path_buffer` - A mutable path buffer that we can push and pop to
+/// * `asset_type` - The kind of assets we are managing
 fn create_directories(path_buffer: &mut PathBuf, asset_type: AssetType) {
     let asset = match asset_type {
         AssetType::Shaders => "shaders",
