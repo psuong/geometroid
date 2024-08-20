@@ -16,6 +16,12 @@ enum ShaderStage {
     Fragment,
 }
 
+enum AssetType {
+    Shaders,
+    Models,
+    Textures,
+}
+
 struct Source {
     root: PathBuf,
     shader_log: PathBuf,
@@ -34,17 +40,35 @@ impl Source {
         }
     }
 
-    pub fn shader_src(&self) -> PathBuf {
+    fn read_key(&self, asset_type: AssetType) -> PathBuf {
+        let asset = match asset_type {
+            AssetType::Shaders => "shaders",
+            AssetType::Models => "models",
+            AssetType::Textures => "textures",
+        };
+
         let content = read_to_string(self.config.as_path()).unwrap();
         let docs = YamlLoader::load_from_str(&content).unwrap();
         let doc = &docs[0];
 
         let mut path_buffer = PathBuf::new();
         path_buffer.push(self.root.as_path());
-        let trailing_path = doc["source"]["shader"].as_str().unwrap();
+        let trailing_path = doc["source"][asset].as_str().unwrap();
         path_buffer.push(Path::new(&trailing_path));
 
         path_buffer
+    }
+
+    pub fn shader_src(&self) -> PathBuf {
+        self.read_key(AssetType::Shaders)
+    }
+
+    pub fn model_src(&self) -> PathBuf {
+        self.read_key(AssetType::Models)
+    }
+
+    pub fn texture_src(&self) -> PathBuf {
+        self.read_key(AssetType::Textures)
     }
 }
 
@@ -108,8 +132,9 @@ fn main() {
     read_dir(shader_dir_path.clone())
         .unwrap()
         .map(Result::unwrap)
-        .filter(|dir| dir.file_type().unwrap().is_file())
-        .filter(|dir| dir.path().extension() == Some(OsStr::new("spv")))
+        .filter(|dir| {
+            dir.file_type().unwrap().is_file() && dir.path().extension() == Some(OsStr::new("spv"))
+        })
         .for_each(|dir| {
             let mut cloned = path_buffer.clone();
             cloned.push(dir.file_name().to_str().unwrap());
@@ -118,6 +143,30 @@ fn main() {
 
     // We have to copy out textures to our target directory
     // TODO: Copy the textures and models.
+    read_dir(source.model_src())
+        .unwrap()
+        .map(Result::unwrap)
+        .filter(|dir| {
+            dir.file_type().unwrap().is_file() && dir.path().extension() == Some(OsStr::new("obj"))
+        })
+        .for_each(|dir| {
+            let mut cloned = path_buffer.clone();
+            cloned.push(dir.file_name().to_str().unwrap());
+            let _ = fs::copy(dir.path(), cloned.as_path());
+        });
+
+    read_dir(source.texture_src())
+        .unwrap()
+        .map(Result::unwrap)
+        .filter(|dir| {
+            dir.file_type().unwrap().is_file() && dir.path().extension() == Some(OsStr::new("png"))
+        })
+        .for_each(|dir| {
+            let mut cloned = path_buffer.clone();
+            cloned.push(dir.file_name().to_str().unwrap());
+            let _ = fs::copy(dir.path(), cloned.as_path());
+        });
+
     let _ = write_messages_to_file(source.shader_log.clone(), &log_messages);
 }
 
