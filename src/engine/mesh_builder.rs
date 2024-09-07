@@ -1,6 +1,6 @@
-// use cgmath::{InnerSpace, Vec2, Vector3, Vector4, Zero};
-use glam::{Vec2, Vec3, Vec4};
 use std::f32::consts::PI;
+
+use nalgebra_glm::{Vec2, Vec3, Vec4};
 
 use super::render::Vertex;
 
@@ -72,9 +72,9 @@ impl MeshBuilder {
     pub fn push_quad(
         &mut self,
         offset: Vec3,
-        width:  Vec3,
+        width: Vec3,
         length: Vec3,
-        color:  Vec4,
+        color: Vec4,
     ) -> &MeshBuilder {
         let normal = width.cross(length).normalize();
 
@@ -117,6 +117,30 @@ impl MeshBuilder {
         self
     }
 
+    pub fn push_circle(
+        &mut self,
+        color: Vec4,
+        center: Vec3,
+        radius: f32,
+        radial_segments: i32,
+        reverse_direction: bool,
+    ) -> &MeshBuilder {
+        let normal = if reverse_direction {
+            Vec3::new(0.0, -1.0, 0.0)
+        } else {
+            Vec3::new(0.0, 1.0, 0.0)
+        };
+
+        self.push_vertex(Vertex {
+            position: center,
+            normal,
+            color,
+            uv: Vec2::new(0.5, 0.5),
+        });
+
+        self
+    }
+
     pub fn push_box(
         &mut self,
         position: Vec3,
@@ -133,7 +157,7 @@ impl MeshBuilder {
         let (near_corner, far_corner) = if center_as_pivot {
             ((up + right + forward) / 2.0, -(up + right + forward) / 2.0)
         } else {
-            (Vec3::ZERO, up + right + forward)
+            (Vec3::zeros(), up + right + forward)
         };
 
         let (near_corner, far_corner) = (near_corner + position, far_corner + position);

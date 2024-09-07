@@ -11,7 +11,7 @@ use ash::{
     Entry, Instance,
 };
 
-pub const REQUIRED_LAYERS: [&'static str; 1] = ["VK_LAYER_KHRONOS_validation"];
+pub const REQUIRED_LAYERS: [&str; 1] = ["VK_LAYER_KHRONOS_validation"];
 
 #[cfg(debug_assertions)]
 pub const ENABLE_VALIDATION_LAYERS: bool = true;

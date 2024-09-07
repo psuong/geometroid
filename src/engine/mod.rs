@@ -49,6 +49,7 @@ use winit::window::Window;
 
 pub mod context;
 pub mod debug;
+pub mod math;
 pub mod mesh_builder;
 pub mod render;
 pub mod shader_utils;

@@ -3,7 +3,7 @@ use std::mem;
 use ash::vk::{
     Format, VertexInputAttributeDescription, VertexInputBindingDescription, VertexInputRate,
 };
-use glam::{Vec2, Vec3, Vec4};
+use nalgebra_glm::{Vec2, Vec3, Vec4};
 use memoffset::offset_of;
 
 // pub const VERTICES: [Vertex; 8] = [
