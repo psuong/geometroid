@@ -1,5 +1,5 @@
 use ash::vk::{DescriptorSetLayoutBinding, DescriptorType, ShaderStageFlags};
-use glam::Mat4;
+use nalgebra_glm::Mat4;
 
 /// A descriptor layout specifies the types of resources that will be accessed. We need the
 /// model view projection matrix.

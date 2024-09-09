@@ -76,7 +76,7 @@ impl MeshBuilder {
         length: Vec3,
         color: Vec4,
     ) -> &MeshBuilder {
-        let normal = width.cross(length).normalize();
+        let normal = width.cross(&length).normalize();
 
         self.vertices.push(Vertex {
             position: offset,
