@@ -35,8 +35,9 @@ use ash::{
     },
     Device, Entry, Instance,
 };
-use glam::{Mat4, Vec2, Vec3, Vec4};
 use mesh_builder::MeshBuilder;
+use nalgebra::{Point3, Unit};
+use nalgebra_glm::{Mat4, Vec2, Vec3, Vec4};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::{
     ffi::{CStr, CString},
@@ -304,7 +305,7 @@ impl Engine {
             .flags(InstanceCreateFlags::default());
 
         if ENABLE_VALIDATION_LAYERS {
-            Self::check_validation_layer_support(&entry);
+            Self::check_validation_layer_support(entry);
             instance_create_info = instance_create_info.enabled_layer_names(&layer_names_ptrs);
         }
 
@@ -322,14 +323,14 @@ impl Engine {
         unsafe {
             self.vk_context
                 .device_ref()
-                .wait_for_fences(&wait_fences, true, std::u64::MAX)
+                .wait_for_fences(&wait_fences, true, u64::MAX)
                 .unwrap()
         };
 
         let result = unsafe {
             self.swapchain.acquire_next_image(
                 self.swapchain_khr,
-                std::u64::MAX,
+                u64::MAX,
                 image_available_semaphore,
                 vk::Fence::null(),
             )
@@ -517,14 +518,17 @@ impl Engine {
         let aspect = self.swapchain_properties.extent.width as f32
             / self.swapchain_properties.extent.height as f32;
 
+        let axis = Unit::new_normalize(Vec3::new(0.0, 1.0, 0.0));
+        let model = Mat4::from_axis_angle(&axis, 0.0);
+
+        let eye = Point3::new(2.0, 2.0, 2.0);
+        let origin = Point3::new(0.0, 0.0, 0.0);
+        let up = Vec3::new(0.0, 0.0, 1.0);
+
         let ubo = UniformBufferObject {
-            model: Mat4::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), 0.0),
-            view: Mat4::look_at_rh(
-                Vec3::new(2.0, 2.0, 2.0),
-                Vec3::ZERO,
-                Vec3::new(0.0, 0.0, 1.0),
-            ),
-            proj: Mat4::perspective_rh(60.0_f32.to_radians(), aspect, 0.1, 10.0),
+            model,
+            view: Mat4::look_at_rh(&eye, &origin, &up),
+            proj: nalgebra_glm::perspective_rh(aspect, 60.0_f32.to_radians(), 0.1, 10.0),
         };
 
         let ubos = [ubo];
@@ -548,12 +552,11 @@ impl Engine {
     /// - Swapchain format - rare for it to change during resizing, but should still be necessary
     /// - Viewport & scissor rectangle size - specified during the graphics pipeline creation
     /// - Framebuffers - directly depend on the swapchain images
-    /// All fields have to be reassigned to the engine after creating them. Now we only need to
-    /// recreate the swapchain _when_ the swapchain is incompatible with the surface (typically on
-    /// resize) or if the window surface properties no longer match the swapchain's properties.
+    ///     All fields have to be reassigned to the engine after creating them. Now we only need to
+    ///     recreate the swapchain _when_ the swapchain is incompatible with the surface (typically on
+    ///     resize) or if the window surface properties no longer match the swapchain's properties.
     pub fn recreate_swapchain(&mut self) {
         log::debug!("Recreating swapchain");
-
         // We must wait for the device to be idling before we recreate the swapchain
         self.wait_gpu_idle();
 
@@ -574,7 +577,7 @@ impl Engine {
 
         let render_pass = Self::create_render_pass(device, properties, self.depth_format);
         let (pipeline, layout) =
-            Self::create_pipeline(&device, properties, render_pass, self.descriptor_set_layout);
+            Self::create_pipeline(device, properties, render_pass, self.descriptor_set_layout);
 
         let depth_texture = Self::create_depth_texture(
             &self.vk_context,
@@ -593,7 +596,7 @@ impl Engine {
         );
 
         let command_buffers = Self::create_and_register_command_buffers(
-            &device,
+            device,
             self.command_pool,
             &swapchain_framebuffers,
             render_pass,
@@ -1995,7 +1998,7 @@ impl Engine {
     fn load_model() -> (Vec<Vertex>, Vec<u32>) {
         let path = Path::new("assets/models/viking_room.obj");
         log::info!("Loading model...{p}", p = path.to_str().unwrap());
-        let (models, _) = tobj::load_obj(&path, &tobj::LoadOptions::default()).unwrap();
+        let (models, _) = tobj::load_obj(path, &tobj::LoadOptions::default()).unwrap();
         let mesh = &models[0].mesh;
         let positions = mesh.positions.as_slice();
         let coords = mesh.texcoords.as_slice();
