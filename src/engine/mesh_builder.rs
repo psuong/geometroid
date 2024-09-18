@@ -7,6 +7,14 @@ pub struct MeshBuilder {
     pub indices: Vec<u32>,
 }
 
+macro_rules! make_triangle {
+    ($builder:expr, $v1:expr, $v2:expr, $v3:expr) => {
+        $builder.indices.push($v1);
+        $builder.indices.push($v2);
+        $builder.indices.push($v3);
+    };
+}
+
 impl MeshBuilder {
     /// Creates a new mesh builder allocating a Vec of vertices and indices.
     /// Note: for every 4 vertices (quad), you have 6 indices
@@ -19,6 +27,98 @@ impl MeshBuilder {
         let indices = Vec::with_capacity(index_count.into());
 
         MeshBuilder { vertices, indices }
+    }
+
+    fn push_circle(
+        &mut self,
+        color: Vec4,
+        center: Vec3,
+        radial_segments: i32,
+        reverse_direction: bool,
+    ) -> &MeshBuilder {
+        let normal = if reverse_direction {
+            Vec3::new(0.0, -1.0, 0.0)
+        } else {
+            Vec3::new(0.0, 1.0, 0.0)
+        };
+
+        self.push_vertex(Vertex {
+            position: center,
+            normal,
+            color,
+            uv: Vec2::new(0.5, 0.5),
+        });
+
+        let center_vertex = (self.vertices.len() - 1) as u32;
+        let angle_slice = PI * 2.0 / radial_segments as f32;
+
+        for i in 0..radial_segments + 1 {
+            let angle = angle_slice * i as f32;
+            let unit_position = Vec3::new(angle.cos(), 0.0, angle.sin());
+            self.push_vertex(Vertex {
+                position: unit_position,
+                normal,
+                color,
+                uv: Vec2::new(unit_position.x + 1.0, unit_position.z + 1.0),
+            });
+
+            if i > 0 {
+                let base_index = (self.vertices.len() - 1) as u32;
+
+                if reverse_direction {
+                    self.indices.push(center_vertex);
+                    self.indices.push(base_index - 1);
+                    self.indices.push(base_index);
+                } else {
+                    self.indices.push(center_vertex);
+                    self.indices.push(base_index);
+                    self.indices.push(base_index - 1);
+                }
+            }
+        }
+
+        self
+    }
+
+    fn push_ring(
+        &mut self,
+        segments: i32,
+        center: Vec3,
+        radius: f32,
+        v: f32,
+        color: Vec4,
+        build_triangles: bool,
+    ) {
+        let angle_slice = PI * 2.0 / segments as f32;
+
+        for i in 0..segments + 1 {
+            let angle = angle_slice * i as f32;
+            let unit_position = Vec3::new(angle.cos(), 0.0, angle.sin());
+            self.push_vertex(Vertex {
+                position: center + unit_position * radius,
+                color,
+                normal: unit_position,
+                uv: Vec2::new(i as f32 / segments as f32, v),
+            });
+
+            if i > 0 && build_triangles {
+                let base_index = (self.vertices.len() - 1) as u32;
+                let verts_per_row = (segments + 1) as u32;
+
+                let first_index = base_index;
+                let second_index = base_index - 1;
+                let third_index = base_index - verts_per_row;
+                let fourth_index = third_index - 1;
+
+                self.indices.push(first_index);
+                self.indices.push(third_index);
+                self.indices.push(second_index);
+
+                self.indices.push(first_index);
+                self.indices.push(fourth_index);
+                self.indices.push(second_index);
+            }
+        }
     }
 
     fn push_sphere_rings_no_triangles(
@@ -73,13 +173,8 @@ impl MeshBuilder {
                 let third_index = base_index - (verts_per_row as u32);
                 let fourth_index = third_index - 1;
 
-                self.indices.push(first_index);
-                self.indices.push(third_index);
-                self.indices.push(second_index);
-
-                self.indices.push(third_index);
-                self.indices.push(fourth_index);
-                self.indices.push(second_index);
+                make_triangle!(self, first_index, third_index, second_index);
+                make_triangle!(self, third_index, fourth_index, second_index);
             }
         }
     }
@@ -137,30 +232,6 @@ impl MeshBuilder {
         self
     }
 
-    pub fn push_circle(
-        &mut self,
-        color: Vec4,
-        center: Vec3,
-        radius: f32,
-        radial_segments: i32,
-        reverse_direction: bool,
-    ) -> &MeshBuilder {
-        let normal = if reverse_direction {
-            Vec3::new(0.0, -1.0, 0.0)
-        } else {
-            Vec3::new(0.0, 1.0, 0.0)
-        };
-
-        self.push_vertex(Vertex {
-            position: center,
-            normal,
-            color,
-            uv: Vec2::new(0.5, 0.5),
-        });
-
-        self
-    }
-
     pub fn push_box(
         &mut self,
         position: Vec3,
@@ -202,7 +273,7 @@ impl MeshBuilder {
             Vec3::new(0.0, angle_slice.cos() * -radius, 0.0),
             angle_slice.sin() * radius,
             0.0,
-            white
+            white,
         );
 
         for i in 1..height_segments + 1 {
@@ -210,13 +281,7 @@ impl MeshBuilder {
             let center = Vec3::new(0.0, (new_angle).cos() * -radius, 0.0);
             let sphere_radius = new_angle.sin() * radius;
             let v = i as f32 / height_segments as f32;
-            self.push_sphere_rings_with_triangles(
-                radial_segments,
-                center,
-                sphere_radius,
-                v,
-                white,
-            );
+            self.push_sphere_rings_with_triangles(radial_segments, center, sphere_radius, v, white);
         }
         self
     }
