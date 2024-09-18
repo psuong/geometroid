@@ -1,8 +1,6 @@
-use std::f32::consts::PI;
-
-use nalgebra_glm::{Vec2, Vec3, Vec4};
-
 use super::render::Vertex;
+use nalgebra_glm::{Vec2, Vec3, Vec4};
+use std::f32::consts::PI;
 
 pub struct MeshBuilder {
     pub vertices: Vec<Vertex>,
@@ -23,6 +21,29 @@ impl MeshBuilder {
         MeshBuilder { vertices, indices }
     }
 
+    fn push_sphere_rings_no_triangles(
+        &mut self,
+        segments: i32,
+        center: Vec3,
+        radius: f32,
+        v: f32,
+        color: Vec4,
+    ) {
+        let angle_slice = PI * 2.0 / segments as f32;
+        for i in 0..segments + 1 {
+            let angle = angle_slice * i as f32;
+            let unit_position = Vec3::new(angle.cos(), 0.0, angle.sin());
+            let vertex_position = center + unit_position * radius;
+
+            self.push_vertex(Vertex {
+                position: vertex_position,
+                normal: vertex_position.normalize(),
+                color,
+                uv: Vec2::new(i as f32 / segments as f32, v),
+            });
+        }
+    }
+
     fn push_sphere_rings_with_triangles(
         &mut self,
         segments: i32,
@@ -30,7 +51,6 @@ impl MeshBuilder {
         radius: f32,
         v: f32,
         color: Vec4,
-        build_triangles: bool,
     ) {
         let angle_slice = PI * 2.0 / segments as f32;
         for i in 0..segments + 1 {
@@ -45,7 +65,7 @@ impl MeshBuilder {
                 uv: Vec2::new(i as f32 / segments as f32, v),
             });
 
-            if build_triangles && i > 0 {
+            if i > 0 {
                 let base_index = (self.vertices.len() - 1) as u32;
                 let verts_per_row = segments + 1;
                 let first_index = base_index;
@@ -175,7 +195,17 @@ impl MeshBuilder {
     pub fn push_sphere(&mut self, radius: f32, radial_segments: i32) -> &MeshBuilder {
         let height_segments = radial_segments / 2;
         let angle_slice = std::f32::consts::PI / height_segments as f32;
-        for i in 0..height_segments + 1 {
+        let white = Vec4::new(1.0, 1.0, 1.0, 1.0);
+
+        self.push_sphere_rings_no_triangles(
+            radial_segments,
+            Vec3::new(0.0, angle_slice.cos() * -radius, 0.0),
+            angle_slice.sin() * radius,
+            0.0,
+            white
+        );
+
+        for i in 1..height_segments + 1 {
             let new_angle = angle_slice * i as f32;
             let center = Vec3::new(0.0, (new_angle).cos() * -radius, 0.0);
             let sphere_radius = new_angle.sin() * radius;
@@ -185,8 +215,7 @@ impl MeshBuilder {
                 center,
                 sphere_radius,
                 v,
-                Vec4::new(1.0, 1.0, 1.0, 1.0),
-                i > 0,
+                white,
             );
         }
         self
