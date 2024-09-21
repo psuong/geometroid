@@ -39,6 +39,7 @@ use mesh_builder::MeshBuilder;
 use nalgebra::{Point3, Unit};
 use nalgebra_glm::{Mat4, Vec2, Vec3, Vec4};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+use shapes::Sphere;
 use std::{
     ffi::{CStr, CString},
     mem::{align_of, size_of},
@@ -195,10 +196,12 @@ impl Engine {
 
         // TODO: create entities to load
         let mut mesh_builder = MeshBuilder::with_capacity(24);
-        mesh_builder.push_box(
-            shapes::Cube::new(Vec3::zeros(), 1.0, 1.0, 1.0, true),
-            Vec4::new(1.0, 1.0, 1.0, 1.0),
-        );
+        // mesh_builder.push_box(
+        //     shapes::Cube::new(Vec3::zeros(), 1.0, 1.0, 1.0, true),
+        //     Vec4::new(1.0, 1.0, 1.0, 1.0),
+        // );
+
+        mesh_builder.push_sphere(Sphere::new(0.5, 100));
 
         // TODO: Abstract this part, because i have to keep creating descriptors, but this is in the
         // constructor so wtf
@@ -1229,8 +1232,8 @@ impl Engine {
         let image = image::open("assets/textures/viking_room.png").unwrap();
         let image_as_rgb = image.to_rgba8();
         let extent = vk::Extent2D {
-            width: (&image_as_rgb).width(),
-            height: (&image_as_rgb).height(),
+            width: (image_as_rgb).width(),
+            height: (image_as_rgb).height(),
         };
         let pixels = image_as_rgb.into_raw();
         let image_size = (pixels.len() * size_of::<u8>()) as vk::DeviceSize;
