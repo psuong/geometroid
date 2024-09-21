@@ -200,6 +200,8 @@ impl Engine {
             Vec4::new(1.0, 1.0, 1.0, 1.0),
         );
 
+        // TODO: Abstract this part, because i have to keep creating descriptors, but this is in the
+        // constructor so wtf
         // mesh_builder.push_sphere(0.5, 50);
         let (vertices, indices) = (mesh_builder.vertices, mesh_builder.indices);
 

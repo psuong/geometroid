@@ -1,6 +1,5 @@
-use nalgebra_glm::Vec3;
-
 use super::math::{FORWARD, RIGHT, UP};
+use nalgebra_glm::Vec3;
 
 pub struct Quad {
     pub offset: Vec3,
@@ -83,6 +82,20 @@ impl Cube {
             ((up + right + forward) / 2.0, -(up + right + forward) / 2.0)
         } else {
             (Vec3::zeros(), up + right + forward)
+        }
+    }
+}
+
+pub struct Sphere {
+    pub radius: f32,
+    pub radial_segments: i32
+}
+
+impl Sphere {
+    pub fn new(radius: f32, radial_segments: i32) -> Self {
+        Sphere {
+            radius,
+            radial_segments
         }
     }
 }
