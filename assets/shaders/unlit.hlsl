@@ -43,7 +43,6 @@ VSOutput vert(VSInput input) {
 
 half4 frag(in VSOutput input) : SV_TARGET {
     float4 textureColor =  textureMap.Sample(sampler_TextureMap, input.uv);
-    textureColor = 1.0;
     float4 transformedColor = textureColor * input.color;
     return transformedColor;
 }
