@@ -1,3 +1,5 @@
+use std::ops::Add;
+
 use nalgebra::UnitQuaternion;
 use nalgebra_glm::Vec3;
 
@@ -32,4 +34,13 @@ pub fn rotate_about_point(point: Vec3, pivot: Vec3, degrees: Vec3) -> Vec3 {
     );
     // rotation.mul_vec3(dir) + pivot
     rotation * dir + pivot
+}
+
+#[inline]
+pub fn select<T>(cond: bool, lhs: T, rhs: T) -> T where T: Add<Output = T> + Copy {
+    if cond {
+        lhs
+    } else {
+        rhs
+    }
 }

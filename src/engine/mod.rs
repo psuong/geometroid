@@ -1,45 +1,47 @@
 pub(crate) use crate::common::MAX_FRAMES_IN_FLIGHT;
 use crate::engine::{render::Vertex, shader_utils::read_shader_from_file};
 
+use array_util::{as_array, empty};
 use ash::{
     ext::debug_utils,
     khr::{surface, swapchain as khr_swapchain},
     util::Align,
     vk::{
         self, AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference,
-        AttachmentStoreOp, BlendFactor, BlendOp, Buffer, BufferCopy, BufferCreateInfo,
-        BufferImageCopy, BufferUsageFlags, ClearColorValue, ClearDepthStencilValue, ClearValue,
-        ColorComponentFlags, CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo,
-        CommandBufferLevel, CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags,
-        CommandPoolCreateInfo, CompositeAlphaFlagsKHR, CullModeFlags, DependencyFlags,
-        DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize,
-        DescriptorSet, DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding,
+        AttachmentStoreOp, BlendFactor, BlendOp, BorderColor, Buffer, BufferCopy, BufferCreateInfo,
+        BufferImageCopy, BufferMemoryBarrier, BufferUsageFlags, ClearColorValue,
+        ClearDepthStencilValue, ClearValue, ColorComponentFlags, CommandBuffer,
+        CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel,
+        CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo,
+        CompareOp, CompositeAlphaFlagsKHR, CullModeFlags, DependencyFlags, DescriptorImageInfo,
+        DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize, DescriptorSet,
+        DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding,
         DescriptorSetLayoutCreateInfo, DescriptorType, DeviceCreateInfo, DeviceMemory,
         DeviceQueueCreateInfo, DeviceSize, Extent2D, Extent3D, Fence, FenceCreateFlags,
-        FenceCreateInfo, Format, FormatFeatureFlags, Framebuffer, FramebufferCreateInfo, FrontFace,
-        GraphicsPipelineCreateInfo, Image, ImageAspectFlags, ImageCreateFlags, ImageCreateInfo,
-        ImageLayout, ImageMemoryBarrier, ImageSubresourceLayers, ImageSubresourceRange,
-        ImageTiling, ImageType, ImageUsageFlags, ImageView, ImageViewCreateInfo, ImageViewType,
-        IndexType, InstanceCreateFlags, LogicOp, MemoryAllocateInfo, MemoryMapFlags,
-        MemoryPropertyFlags, MemoryRequirements, Offset2D, Offset3D, PhysicalDevice,
-        PhysicalDeviceFeatures, PhysicalDeviceMemoryProperties, Pipeline, PipelineBindPoint,
-        PipelineCache, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo,
-        PipelineInputAssemblyStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo,
-        PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo,
-        PipelineShaderStageCreateInfo, PipelineStageFlags, PipelineVertexInputStateCreateInfo,
-        PipelineViewportStateCreateInfo, PolygonMode, PrimitiveTopology, Queue, QueueFlags, Rect2D,
-        RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags,
+        FenceCreateInfo, Filter, Format, FormatFeatureFlags, Framebuffer, FramebufferCreateInfo,
+        FrontFace, GraphicsPipelineCreateInfo, Image, ImageAspectFlags, ImageBlit,
+        ImageCreateFlags, ImageCreateInfo, ImageLayout, ImageMemoryBarrier, ImageSubresourceLayers,
+        ImageSubresourceRange, ImageTiling, ImageType, ImageUsageFlags, ImageView,
+        ImageViewCreateInfo, ImageViewType, IndexType, InstanceCreateFlags, LogicOp,
+        MemoryAllocateInfo, MemoryBarrier, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements,
+        Offset2D, Offset3D, PhysicalDevice, PhysicalDeviceFeatures, PhysicalDeviceMemoryProperties,
+        Pipeline, PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState,
+        PipelineColorBlendStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineLayout,
+        PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo,
+        PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags,
+        PipelineVertexInputStateCreateInfo, PipelineViewportStateCreateInfo, PolygonMode,
+        PrimitiveTopology, Queue, QueueFlags, Rect2D, RenderPass, RenderPassBeginInfo,
+        RenderPassCreateInfo, SampleCountFlags, SamplerAddressMode, SamplerMipmapMode,
         SemaphoreCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo, SubpassContents,
         SubpassDependency, SubpassDescription, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR,
         Viewport, WriteDescriptorSet, QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL, TRUE,
     },
     Device, Entry, Instance,
 };
-use mesh_builder::MeshBuilder;
+use math::select;
 use nalgebra::{Point3, Unit};
 use nalgebra_glm::{Mat4, Vec2, Vec3, Vec4};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
-use shapes::Sphere;
 use std::{
     ffi::{CStr, CString},
     mem::{align_of, size_of},
@@ -49,6 +51,7 @@ use std::{
 };
 use winit::window::Window;
 
+pub mod array_util;
 pub mod context;
 pub mod debug;
 pub mod math;
@@ -195,20 +198,19 @@ impl Engine {
         let texture = Self::create_texture_image(&vk_context, command_pool, graphics_queue);
 
         // TODO: create entities to load
-        let mut mesh_builder = MeshBuilder::with_capacity(24);
+        // let mut mesh_builder = MeshBuilder::with_capacity(24);
         // mesh_builder.push_box(
         //     shapes::Cube::new(Vec3::zeros(), 1.0, 1.0, 1.0, true),
         //     Vec4::new(1.0, 1.0, 1.0, 1.0),
         // );
-
-        mesh_builder.push_sphere(Sphere::new(0.5, 100));
+        // mesh_builder.push_sphere(Sphere::new(0.5, 100));
 
         // TODO: Abstract this part, because i have to keep creating descriptors, but this is in the
         // constructor so wtf
         // mesh_builder.push_sphere(0.5, 50);
-        let (vertices, indices) = (mesh_builder.vertices, mesh_builder.indices);
+        // let (vertices, indices) = (mesh_builder.vertices, mesh_builder.indices);
 
-        // let (vertices, indices) = Self::load_model();
+        let (vertices, indices) = Self::load_model();
         let (vertex_buffer, vertex_buffer_memory) = Self::create_vertex_buffer(
             &vk_context,
             transient_command_pool,
@@ -661,7 +663,7 @@ impl Engine {
         let devices = unsafe { instance.enumerate_physical_devices().unwrap() };
         let device = devices
             .into_iter()
-            .find(|device| Self::is_device_suitable(&instance, &surface, surface_khr, *device))
+            .find(|device| Self::is_device_suitable(instance, surface, surface_khr, *device))
             .expect("No suitable physical device!");
 
         let props = unsafe { instance.get_physical_device_properties(device) };
@@ -909,7 +911,7 @@ impl Engine {
         swapchain_properties: SwapchainProperties,
     ) -> Vec<ImageView> {
         swapchain_images
-            .into_iter()
+            .iter()
             .map(|image| {
                 Self::create_image_view(
                     device,
@@ -1207,7 +1209,7 @@ impl Engine {
         swapchain_properties: SwapchainProperties,
     ) -> Vec<Framebuffer> {
         image_views
-            .into_iter()
+            .iter()
             .map(|view| [*view, depth_texture.view])
             .map(|attachment| {
                 let framebuffer_info = FramebufferCreateInfo::default()
@@ -1235,6 +1237,8 @@ impl Engine {
             width: (image_as_rgb).width(),
             height: (image_as_rgb).height(),
         };
+        let max_mip_levels = ((extent.width.min(extent.height) as f32).log2().floor() + 1.0) as u32;
+
         let pixels = image_as_rgb.into_raw();
         let image_size = (pixels.len() * size_of::<u8>()) as vk::DeviceSize;
         let device = vk_context.device_ref();
@@ -1259,9 +1263,12 @@ impl Engine {
             vk_context,
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
             extent,
-            vk::Format::R8G8B8A8_UNORM,
-            vk::ImageTiling::OPTIMAL,
-            vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
+            max_mip_levels,
+            Format::R8G8B8A8_UNORM,
+            ImageTiling::OPTIMAL,
+            ImageUsageFlags::TRANSFER_DST
+                | ImageUsageFlags::TRANSFER_SRC
+                | ImageUsageFlags::SAMPLED,
         );
 
         // Transition the image layout and copy the buffer into the image
@@ -1272,21 +1279,22 @@ impl Engine {
                 command_pool,
                 copy_queue,
                 image,
-                vk::Format::R8G8B8A8_UNORM,
-                vk::ImageLayout::UNDEFINED,
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                max_mip_levels,
+                Format::R8G8B8A8_UNORM,
+                ImageLayout::UNDEFINED,
+                ImageLayout::TRANSFER_DST_OPTIMAL,
             );
 
             Self::copy_buffer_to_image(device, command_pool, copy_queue, buffer, image, extent);
 
-            Self::transition_image_layout(
-                device,
+            Self::generate_mipmaps(
+                vk_context,
                 command_pool,
                 copy_queue,
                 image,
-                vk::Format::R8G8B8A8_UNORM,
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                extent,
+                Format::R8G8B8A8_UNORM,
+                max_mip_levels,
             );
         }
 
@@ -1304,18 +1312,18 @@ impl Engine {
 
         let sampler = {
             let sampler_info = vk::SamplerCreateInfo::default()
-                .mag_filter(vk::Filter::LINEAR)
-                .min_filter(vk::Filter::LINEAR)
-                .address_mode_u(vk::SamplerAddressMode::REPEAT)
-                .address_mode_v(vk::SamplerAddressMode::REPEAT)
-                .address_mode_w(vk::SamplerAddressMode::REPEAT)
+                .mag_filter(Filter::LINEAR)
+                .min_filter(Filter::LINEAR)
+                .address_mode_u(SamplerAddressMode::REPEAT)
+                .address_mode_v(SamplerAddressMode::REPEAT)
+                .address_mode_w(SamplerAddressMode::REPEAT)
                 .anisotropy_enable(true)
                 .max_anisotropy(16.0)
-                .border_color(vk::BorderColor::INT_OPAQUE_BLACK)
+                .border_color(BorderColor::INT_OPAQUE_BLACK)
                 .unnormalized_coordinates(false)
                 .compare_enable(false)
-                .compare_op(vk::CompareOp::ALWAYS)
-                .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
+                .compare_op(CompareOp::ALWAYS)
+                .mipmap_mode(SamplerMipmapMode::LINEAR)
                 .mip_lod_bias(0.0)
                 .min_lod(0.0)
                 .max_lod(0.0);
@@ -1335,6 +1343,7 @@ impl Engine {
         vk_context: &VkContext,
         mem_properties: MemoryPropertyFlags,
         extent: Extent2D,
+        mip_levels: u32,
         format: Format,
         tiling: ImageTiling,
         usage: ImageUsageFlags,
@@ -1347,7 +1356,7 @@ impl Engine {
                 height: extent.height,
                 depth: 1,
             })
-            .mip_levels(1)
+            .mip_levels(mip_levels)
             .array_layers(1)
             .format(format)
             .tiling(tiling)
@@ -1401,6 +1410,7 @@ impl Engine {
         command_pool: CommandPool,
         transition_queue: Queue,
         image: Image,
+        mip_levels: u32,
         format: Format,
         old_layout: ImageLayout,
         new_layout: ImageLayout,
@@ -1436,7 +1446,7 @@ impl Engine {
             let aspect_mask = if new_layout == ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL {
                 let mut mask = ImageAspectFlags::DEPTH;
                 if Self::has_stencil_component(format) {
-                    mask = mask | ImageAspectFlags::STENCIL;
+                    mask |= ImageAspectFlags::STENCIL;
                 }
                 mask
             } else {
@@ -1452,7 +1462,7 @@ impl Engine {
                 .subresource_range(ImageSubresourceRange {
                     aspect_mask,
                     base_mip_level: 0,
-                    level_count: 1,
+                    level_count: mip_levels,
                     base_array_layer: 0,
                     layer_count: 1,
                 })
@@ -1513,6 +1523,160 @@ impl Engine {
         });
     }
 
+    fn generate_mipmaps(
+        vk_context: &VkContext,
+        command_pool: vk::CommandPool,
+        transfer_queue: Queue,
+        image: Image,
+        extent: Extent2D,
+        format: Format,
+        mip_levels: u32,
+    ) {
+        let format_properties = unsafe {
+            vk_context
+                .instance_ref()
+                .get_physical_device_format_properties(vk_context.physical_device_ref(), format)
+        };
+
+        if !format_properties
+            .optimal_tiling_features
+            .contains(FormatFeatureFlags::SAMPLED_IMAGE_FILTER_LINEAR)
+        {
+            panic!("Linear blitting is not supported for format {:?}.", format);
+        }
+
+        Self::execute_one_time_commands(
+            vk_context.device_ref(),
+            command_pool,
+            transfer_queue,
+            |buffer| {
+                let mut barrier = ImageMemoryBarrier::default()
+                    .image(image)
+                    .src_queue_family_index(QUEUE_FAMILY_IGNORED)
+                    .dst_queue_family_index(QUEUE_FAMILY_IGNORED)
+                    .subresource_range(ImageSubresourceRange {
+                        aspect_mask: ImageAspectFlags::COLOR,
+                        base_mip_level: 0,
+                        level_count: 1,
+                        base_array_layer: 0,
+                        layer_count: 1,
+                    });
+
+                let mut mip_width = extent.width as i32;
+                let mut mip_height = extent.height as i32;
+
+                for level in 1..mip_levels {
+                    let next_mip_width = select(mip_width > 1, mip_width / 2, mip_width);
+                    let next_mip_height = select(mip_height > 1, mip_height / 2, mip_height);
+
+                    barrier.subresource_range.base_mip_level = level - 1;
+                    barrier.old_layout = ImageLayout::TRANSFER_DST_OPTIMAL;
+                    barrier.new_layout = ImageLayout::TRANSFER_SRC_OPTIMAL;
+                    barrier.src_access_mask = AccessFlags::TRANSFER_WRITE;
+                    barrier.dst_access_mask = AccessFlags::TRANSFER_READ;
+
+                    let barriers = as_array(barrier);
+
+                    unsafe {
+                        vk_context.device_ref().cmd_pipeline_barrier(
+                            buffer,
+                            PipelineStageFlags::TRANSFER,
+                            PipelineStageFlags::TRANSFER,
+                            DependencyFlags::empty(),
+                            &empty::<MemoryBarrier>(),
+                            &empty::<BufferMemoryBarrier>(),
+                            &barriers,
+                        );
+                    };
+
+                    let blits = as_array(
+                        ImageBlit::default()
+                            .src_offsets([
+                                Offset3D { x: 0, y: 0, z: 0 },
+                                Offset3D {
+                                    x: mip_width,
+                                    y: mip_height,
+                                    z: 1,
+                                },
+                            ])
+                            .src_subresource(ImageSubresourceLayers {
+                                aspect_mask: ImageAspectFlags::COLOR,
+                                mip_level: level - 1,
+                                base_array_layer: 0,
+                                layer_count: 1,
+                            })
+                            .dst_offsets([
+                                Offset3D { x: 0, y: 0, z: 0 },
+                                Offset3D {
+                                    x: next_mip_width,
+                                    y: next_mip_height,
+                                    z: 1,
+                                },
+                            ])
+                            .dst_subresource(ImageSubresourceLayers {
+                                aspect_mask: ImageAspectFlags::COLOR,
+                                mip_level: level,
+                                base_array_layer: 0,
+                                layer_count: 1,
+                            }),
+                    );
+
+                    unsafe {
+                        vk_context.device_ref().cmd_blit_image(
+                            buffer,
+                            image,
+                            ImageLayout::TRANSFER_SRC_OPTIMAL,
+                            image,
+                            ImageLayout::TRANSFER_DST_OPTIMAL,
+                            &blits,
+                            Filter::LINEAR,
+                        )
+                    };
+
+                    barrier.old_layout = ImageLayout::TRANSFER_SRC_OPTIMAL;
+                    barrier.new_layout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+                    barrier.src_access_mask = AccessFlags::TRANSFER_READ;
+                    barrier.dst_access_mask = AccessFlags::SHADER_READ;
+                    let barriers = as_array(barrier);
+
+                    unsafe {
+                        vk_context.device_ref().cmd_pipeline_barrier(
+                            buffer,
+                            PipelineStageFlags::TRANSFER,
+                            PipelineStageFlags::FRAGMENT_SHADER,
+                            DependencyFlags::empty(),
+                            &empty::<MemoryBarrier>(),
+                            &empty::<BufferMemoryBarrier>(),
+                            &barriers,
+                        )
+                    };
+
+                    mip_width = next_mip_width;
+                    mip_height = next_mip_height;
+                }
+
+                barrier.subresource_range.base_mip_level = mip_levels - 1;
+                barrier.old_layout = ImageLayout::TRANSFER_DST_OPTIMAL;
+                barrier.new_layout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
+                barrier.src_access_mask = AccessFlags::TRANSFER_WRITE;
+                barrier.dst_access_mask = AccessFlags::SHADER_READ;
+                let barriers = [barrier];
+
+                unsafe {
+                    vk_context.device_ref().cmd_pipeline_barrier(
+                        buffer,
+                        PipelineStageFlags::TRANSFER,
+                        PipelineStageFlags::FRAGMENT_SHADER,
+                        DependencyFlags::empty(),
+                        &empty::<MemoryBarrier>(),
+                        &empty::<BufferMemoryBarrier>(),
+                        &barriers,
+                    )
+                };
+            },
+        );
+    }
+
     fn create_vertex_buffer(
         vk_context: &VkContext,
         command_pool: CommandPool,
@@ -1550,7 +1714,7 @@ impl Engine {
         usage: BufferUsageFlags,
         data: &[T],
     ) -> (vk::Buffer, DeviceMemory) {
-        let size = (data.len() * size_of::<T>()) as DeviceSize;
+        let size = size_of_val(data) as DeviceSize;
 
         let (staging_buffer, staging_memory, staging_mem_size) = Self::create_buffer(
             vk_context,
@@ -1628,7 +1792,7 @@ impl Engine {
         dst: Buffer,
         size: DeviceSize,
     ) {
-        Self::execute_one_time_commands(&device, command_pool, transfer_queue, |buffer| {
+        Self::execute_one_time_commands(device, command_pool, transfer_queue, |buffer| {
             let region = BufferCopy {
                 src_offset: 0,
                 dst_offset: 0,
@@ -1772,18 +1936,14 @@ impl Engine {
         tiling: ImageTiling,
         features: FormatFeatureFlags,
     ) -> Option<Format> {
-        candidates.iter().map(|f| *f).find(|candidate| {
+        candidates.iter().copied().find(|candidate| {
             let props =
                 unsafe { instance.get_physical_device_format_properties(device, *candidate) };
 
             if tiling == ImageTiling::LINEAR && props.linear_tiling_features.contains(features) {
                 true
-            } else if tiling == ImageTiling::OPTIMAL
-                && props.optimal_tiling_features.contains(features)
-            {
-                true
             } else {
-                false
+                tiling == ImageTiling::OPTIMAL && props.optimal_tiling_features.contains(features)
             }
         })
     }
@@ -1982,11 +2142,12 @@ impl Engine {
     ) -> Texture {
         let (image, mem) = Self::create_image(
             vk_context,
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            MemoryPropertyFlags::DEVICE_LOCAL,
             extent,
+            1,
             format,
-            vk::ImageTiling::OPTIMAL,
-            vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
+            ImageTiling::OPTIMAL,
+            ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
         );
 
         let device = vk_context.device_ref();
@@ -1995,12 +2156,13 @@ impl Engine {
             command_pool,
             transition_queue,
             image,
+            1,
             format,
-            vk::ImageLayout::UNDEFINED,
-            vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            ImageLayout::UNDEFINED,
+            ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
         );
 
-        let view = Self::create_image_view(device, image, format, vk::ImageAspectFlags::DEPTH);
+        let view = Self::create_image_view(device, image, format, ImageAspectFlags::DEPTH);
 
         Texture::new(image, mem, view, None)
     }
