@@ -916,6 +916,7 @@ impl Engine {
                 Self::create_image_view(
                     device,
                     *image,
+                    1,
                     swapchain_properties.format.format,
                     ImageAspectFlags::COLOR,
                 )
@@ -928,6 +929,7 @@ impl Engine {
     fn create_image_view(
         device: &Device,
         image: Image,
+        mip_levels: u32,
         format: Format,
         aspect_mask: ImageAspectFlags,
     ) -> ImageView {
@@ -938,7 +940,7 @@ impl Engine {
             .subresource_range(ImageSubresourceRange {
                 aspect_mask,
                 base_mip_level: 0,
-                level_count: 1,
+                level_count: mip_levels,
                 base_array_layer: 0,
                 layer_count: 1,
             });
@@ -1238,6 +1240,7 @@ impl Engine {
             height: (image_as_rgb).height(),
         };
         let max_mip_levels = ((extent.width.min(extent.height) as f32).log2().floor() + 1.0) as u32;
+        log::error!("max_mip_levels: {}", max_mip_levels);
 
         let pixels = image_as_rgb.into_raw();
         let image_size = (pixels.len() * size_of::<u8>()) as vk::DeviceSize;
@@ -1264,6 +1267,7 @@ impl Engine {
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
             extent,
             max_mip_levels,
+            SampleCountFlags::TYPE_1,
             Format::R8G8B8A8_UNORM,
             ImageTiling::OPTIMAL,
             ImageUsageFlags::TRANSFER_DST
@@ -1306,6 +1310,7 @@ impl Engine {
         let image_view = Self::create_image_view(
             device,
             image,
+            max_mip_levels,
             vk::Format::R8G8B8A8_UNORM,
             vk::ImageAspectFlags::COLOR,
         );
@@ -1325,8 +1330,8 @@ impl Engine {
                 .compare_op(CompareOp::ALWAYS)
                 .mipmap_mode(SamplerMipmapMode::LINEAR)
                 .mip_lod_bias(0.0)
-                .min_lod(0.0)
-                .max_lod(0.0);
+                .min_lod(3.0)
+                .max_lod(max_mip_levels as f32);
 
             unsafe { device.create_sampler(&sampler_info, None).unwrap() }
         };
@@ -1344,6 +1349,7 @@ impl Engine {
         mem_properties: MemoryPropertyFlags,
         extent: Extent2D,
         mip_levels: u32,
+        sample_count: SampleCountFlags,
         format: Format,
         tiling: ImageTiling,
         usage: ImageUsageFlags,
@@ -1367,7 +1373,7 @@ impl Engine {
             .initial_layout(ImageLayout::UNDEFINED)
             .usage(usage)
             .sharing_mode(SharingMode::EXCLUSIVE)
-            .samples(SampleCountFlags::TYPE_1)
+            .samples(sample_count)
             .flags(ImageCreateFlags::empty()); // TODO: Look into this when I want to use a terrain.
 
         let image = unsafe {
@@ -2145,6 +2151,7 @@ impl Engine {
             MemoryPropertyFlags::DEVICE_LOCAL,
             extent,
             1,
+            SampleCountFlags::TYPE_1,
             format,
             ImageTiling::OPTIMAL,
             ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
@@ -2162,7 +2169,7 @@ impl Engine {
             ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
         );
 
-        let view = Self::create_image_view(device, image, format, ImageAspectFlags::DEPTH);
+        let view = Self::create_image_view(device, image, 1, format, ImageAspectFlags::DEPTH);
 
         Texture::new(image, mem, view, None)
     }
