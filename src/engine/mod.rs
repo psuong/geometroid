@@ -38,6 +38,7 @@ use ash::{
     },
     Device, Entry, Instance,
 };
+use inputs::MouseInputs;
 use math::select;
 use nalgebra::{Point3, Unit};
 use nalgebra_glm::{Mat4, Vec2, Vec3, Vec4};
@@ -52,8 +53,10 @@ use std::{
 use winit::window::Window;
 
 pub mod array_util;
+pub mod camera;
 pub mod context;
 pub mod debug;
+pub mod inputs;
 pub mod math;
 pub mod mesh_builder;
 pub mod render;
@@ -76,6 +79,7 @@ use self::{shader_utils::create_shader_module, utils::SwapchainProperties};
 use crate::{common::HEIGHT, engine::utils::SwapchainSupportDetails, WIDTH};
 
 pub struct Engine {
+    pub mouse_inputs: MouseInputs,
     command_buffers: Vec<CommandBuffer>,
     command_pool: CommandPool,
     descriptor_set_layout: DescriptorSetLayout,
@@ -254,6 +258,7 @@ impl Engine {
         let in_flight_frames = Self::create_sync_objects(vk_context.device_ref());
 
         Self {
+            mouse_inputs: MouseInputs::new(),
             _start_instant: Instant::now(),
             resize_dimensions: None,
             vk_context,
@@ -1240,7 +1245,6 @@ impl Engine {
             height: (image_as_rgb).height(),
         };
         let max_mip_levels = ((extent.width.min(extent.height) as f32).log2().floor() + 1.0) as u32;
-        log::error!("max_mip_levels: {}", max_mip_levels);
 
         let pixels = image_as_rgb.into_raw();
         let image_size = (pixels.len() * size_of::<u8>()) as vk::DeviceSize;
@@ -1330,7 +1334,7 @@ impl Engine {
                 .compare_op(CompareOp::ALWAYS)
                 .mipmap_mode(SamplerMipmapMode::LINEAR)
                 .mip_lod_bias(0.0)
-                .min_lod(3.0)
+                .min_lod(1.0)
                 .max_lod(max_mip_levels as f32);
 
             unsafe { device.create_sampler(&sampler_info, None).unwrap() }
