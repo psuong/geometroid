@@ -31,18 +31,18 @@ use ash::{
         PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo,
         PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags,
         PipelineVertexInputStateCreateInfo, PipelineViewportStateCreateInfo, PolygonMode,
-        PresentInfoKHR, PrimitiveTopology, Queue, QueueFlags, Rect2D, RenderPass,
-        RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags, SamplerAddressMode,
-        SamplerCreateInfo, SamplerMipmapMode, SemaphoreCreateInfo, ShaderStageFlags, SharingMode,
-        SubmitInfo, SubpassContents, SubpassDependency, SubpassDescription, SurfaceKHR,
-        SwapchainCreateInfoKHR, SwapchainKHR, Viewport, WriteDescriptorSet, QUEUE_FAMILY_IGNORED,
-        SUBPASS_EXTERNAL, TRUE,
+        PresentInfoKHR, PrimitiveTopology, Queue, Rect2D, RenderPass, RenderPassBeginInfo,
+        RenderPassCreateInfo, SampleCountFlags, SamplerAddressMode, SamplerCreateInfo,
+        SamplerMipmapMode, SemaphoreCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo,
+        SubpassContents, SubpassDependency, SubpassDescription, SwapchainCreateInfoKHR,
+        SwapchainKHR, Viewport, WriteDescriptorSet, QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL,
     },
     Device, Entry, Instance,
 };
-use math::{select, FORWARD, RIGHT, UP};
+use math::{select, FORWARD, UP};
 use nalgebra::{Point3, Unit};
 use nalgebra_glm::{Mat4, Vec2, Vec3, Vec4};
+use physical_devices::pick_physical_device;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::{
     ffi::{CStr, CString},
@@ -60,6 +60,7 @@ pub mod debug;
 pub mod inputs;
 pub mod math;
 pub mod mesh_builder;
+pub mod physical_devices;
 pub mod render;
 pub mod shader_utils;
 pub mod shapes;
@@ -136,7 +137,7 @@ impl Engine {
         };
 
         let (physical_device, queue_families_indices) =
-            Self::pick_physical_device(&instance, &surface, surface_khr);
+            pick_physical_device(&instance, &surface, surface_khr);
 
         let (logical_device, graphics_queue, present_queue) =
             Self::create_logical_device_with_graphics_queue(
@@ -532,9 +533,9 @@ impl Engine {
     }
 
     fn update_uniform_buffers(&mut self, current_image: u32) {
-        let elapsed = self._start_instant.elapsed();
-        let elapsed = elapsed.as_secs() as f32 + (elapsed.subsec_millis() as f32) / 1000.0;
-        // let elapsed = 1.0;
+        // let elapsed = self._start_instant.elapsed();
+        // let elapsed = elapsed.as_secs() as f32 + (elapsed.subsec_millis() as f32) / 1000.0;
+        let elapsed = 0.0;
 
         let aspect = self.swapchain_properties.extent.width as f32
             / self.swapchain_properties.extent.height as f32;
@@ -645,115 +646,6 @@ impl Engine {
     /// Force the engine to wait because ALL vulkan operations are async.
     pub fn wait_gpu_idle(&self) {
         unsafe { self.vk_context.device_ref().device_wait_idle().unwrap() };
-    }
-
-    /// Pick an actual graphics card that exists on the machine.
-    fn pick_physical_device(
-        instance: &Instance,
-        surface: &surface::Instance,
-        surface_khr: SurfaceKHR,
-    ) -> (PhysicalDevice, QueueFamiliesIndices) {
-        let devices = unsafe { instance.enumerate_physical_devices().unwrap() };
-        let device = devices
-            .into_iter()
-            .find(|device| Self::is_device_suitable(instance, surface, surface_khr, *device))
-            .expect("No suitable physical device!");
-
-        let props = unsafe { instance.get_physical_device_properties(device) };
-        log::info!("Selected physical device: {:?}", unsafe {
-            CStr::from_ptr(props.device_name.as_ptr())
-        });
-
-        let (graphics, present) = Self::find_queue_families(instance, surface, surface_khr, device);
-        let queue_families_indices = QueueFamiliesIndices {
-            graphics_index: graphics.unwrap(),
-            present_index: present.unwrap(),
-        };
-
-        (device, queue_families_indices)
-    }
-
-    /// Checks if the physical device can do rendering. Ensures that there is a graphics and present
-    /// queue index, which may be at different indices.
-    fn is_device_suitable(
-        instance: &Instance,
-        surface: &surface::Instance,
-        surface_khr: SurfaceKHR,
-        device: PhysicalDevice,
-    ) -> bool {
-        let (graphics, present) = Self::find_queue_families(instance, surface, surface_khr, device);
-        let extension_support = Self::check_device_extension_support(instance, device);
-        let is_swapchain_adequate = {
-            let details = SwapchainSupportDetails::new(device, surface, surface_khr);
-            !details.formats.is_empty() && !details.present_modes.is_empty()
-        };
-        let features = unsafe { instance.get_physical_device_features(device) };
-        graphics.is_some()
-            && present.is_some()
-            && extension_support
-            && is_swapchain_adequate
-            && features.sampler_anisotropy == TRUE
-    }
-
-    fn check_device_extension_support(instance: &Instance, device: PhysicalDevice) -> bool {
-        let required_extentions = Self::get_required_device_extensions();
-
-        let extension_props = unsafe {
-            instance
-                .enumerate_device_extension_properties(device)
-                .unwrap()
-        };
-
-        for required in required_extentions.iter() {
-            let found = extension_props.iter().any(|ext| {
-                let name = unsafe { CStr::from_ptr(ext.extension_name.as_ptr()) };
-                required == &name
-            });
-
-            if !found {
-                return false;
-            }
-        }
-
-        true
-    }
-
-    /// Queues only support a subset of commands. It finds a graphics queue and present queue that
-    /// can present images to the surface that is created.
-    fn find_queue_families(
-        instance: &Instance,
-        surface: &surface::Instance,
-        surface_khr: SurfaceKHR,
-        device: PhysicalDevice,
-    ) -> (Option<u32>, Option<u32>) {
-        let mut graphics: Option<u32> = None;
-        let mut present: Option<u32> = None;
-
-        let props = unsafe { instance.get_physical_device_queue_family_properties(device) };
-
-        for (index, family) in props.iter().filter(|f| f.queue_count > 0).enumerate() {
-            let index = index as u32;
-
-            if family.queue_flags.contains(QueueFlags::GRAPHICS) && graphics.is_none() {
-                graphics = Some(index);
-            }
-
-            let present_support = unsafe {
-                surface
-                    .get_physical_device_surface_support(device, index, surface_khr)
-                    .unwrap()
-            };
-
-            if present_support && present.is_none() {
-                present = Some(index);
-            }
-
-            if graphics.is_some() && present.is_some() {
-                break;
-            }
-        }
-
-        (graphics, present)
     }
 
     /// Create a logical device based on the validation layers that are enabled.

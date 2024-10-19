@@ -1,7 +1,7 @@
 use std::ops::Add;
 
-use nalgebra::{Point3, UnitQuaternion};
-use nalgebra_glm::{Mat4, Mat4x4, Vec3};
+use nalgebra::UnitQuaternion;
+use nalgebra_glm::{Mat4x4, Vec3};
 
 #[allow(dead_code)]
 pub const UP : Vec3 = Vec3::new(0.0, 1.0, 0.0);
@@ -36,11 +36,13 @@ pub fn rotate_about_point(point: Vec3, pivot: Vec3, degrees: Vec3) -> Vec3 {
     rotation * dir + pivot
 }
 
+#[inline]
+#[allow(dead_code)]
 pub fn trs(translation: &Vec3, angle: f32, axis: &Vec3, scale: &Vec3) -> Mat4x4 {
     let identity = Mat4x4::identity();
-    let t = nalgebra_glm::translate(&identity, &translation);
-    let r = nalgebra_glm::rotate(&identity, angle, &axis);
-    let s = nalgebra_glm::scale(&identity, &scale);
+    let t = nalgebra_glm::translate(&identity, translation);
+    let r = nalgebra_glm::rotate(&identity, angle, axis);
+    let s = nalgebra_glm::scale(&identity, scale);
     t * r * s
 }
 
