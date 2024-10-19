@@ -40,7 +40,7 @@ use ash::{
     },
     Device, Entry, Instance,
 };
-use math::select;
+use math::{select, FORWARD, RIGHT, UP};
 use nalgebra::{Point3, Unit};
 use nalgebra_glm::{Mat4, Vec2, Vec3, Vec4};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
@@ -532,23 +532,22 @@ impl Engine {
     }
 
     fn update_uniform_buffers(&mut self, current_image: u32) {
-        // let elapsed = self._start_instant.elapsed();
-        // let elapsed = elapsed.as_secs() as f32 + (elapsed.subsec_millis() as f32) / 1_000 as f32;
-        let elapsed = 1.0;
+        let elapsed = self._start_instant.elapsed();
+        let elapsed = elapsed.as_secs() as f32 + (elapsed.subsec_millis() as f32) / 1000.0;
+        // let elapsed = 1.0;
 
         let aspect = self.swapchain_properties.extent.width as f32
             / self.swapchain_properties.extent.height as f32;
 
-        let axis = Unit::new_normalize(Vec3::new(0.0, 1.0, 0.0));
-        let model = Mat4::from_axis_angle(&axis, 0.0);
+        let axis = Unit::new_normalize(UP);
+        let model = Mat4::from_axis_angle(&axis, elapsed * 0.1667);
 
         let eye = Point3::new(2.0, 2.0, 2.0);
         let origin = Point3::new(0.0, 0.0, 0.0);
-        let up = Vec3::new(0.0, 0.0, 1.0);
 
         let ubo = UniformBufferObject {
             model,
-            view: Mat4::look_at_rh(&eye, &origin, &up),
+            view: Mat4::look_at_rh(&eye, &origin, &FORWARD),
             proj: nalgebra_glm::perspective_rh(aspect, 60.0_f32.to_radians(), 0.1, 10.0),
         };
 
