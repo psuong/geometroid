@@ -13,9 +13,9 @@ use ash::{
         ClearDepthStencilValue, ClearValue, ColorComponentFlags, CommandBuffer,
         CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel,
         CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo,
-        CompareOp, CompositeAlphaFlagsKHR, CullModeFlags, DependencyFlags, DescriptorImageInfo,
-        DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize, DescriptorSet,
-        DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding,
+        CompareOp, CompositeAlphaFlagsKHR, CullModeFlags, DependencyFlags,
+        DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize,
+        DescriptorSet, DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding,
         DescriptorSetLayoutCreateInfo, DescriptorType, DeviceCreateInfo, DeviceMemory,
         DeviceQueueCreateInfo, DeviceSize, Extent2D, Extent3D, Fence, FenceCreateFlags,
         FenceCreateInfo, Filter, Format, FormatFeatureFlags, Framebuffer, FramebufferCreateInfo,
@@ -26,19 +26,19 @@ use ash::{
         MemoryAllocateInfo, MemoryBarrier, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements,
         Offset2D, Offset3D, PhysicalDevice, PhysicalDeviceFeatures, PhysicalDeviceMemoryProperties,
         Pipeline, PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState,
-        PipelineColorBlendStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineLayout,
-        PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo,
-        PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags,
-        PipelineVertexInputStateCreateInfo, PipelineViewportStateCreateInfo, PolygonMode,
-        PrimitiveTopology, Queue, QueueFlags, Rect2D, RenderPass, RenderPassBeginInfo,
-        RenderPassCreateInfo, SampleCountFlags, SamplerAddressMode, SamplerMipmapMode,
-        SemaphoreCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo, SubpassContents,
-        SubpassDependency, SubpassDescription, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR,
-        Viewport, WriteDescriptorSet, QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL, TRUE,
+        PipelineColorBlendStateCreateInfo, PipelineDepthStencilStateCreateInfo,
+        PipelineInputAssemblyStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo,
+        PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo,
+        PipelineShaderStageCreateInfo, PipelineStageFlags, PipelineVertexInputStateCreateInfo,
+        PipelineViewportStateCreateInfo, PolygonMode, PrimitiveTopology, Queue, QueueFlags, Rect2D,
+        RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags,
+        SamplerAddressMode, SamplerMipmapMode, SemaphoreCreateInfo, ShaderStageFlags, SharingMode,
+        SubmitInfo, SubpassContents, SubpassDependency, SubpassDescription, SurfaceKHR,
+        SwapchainCreateInfoKHR, SwapchainKHR, Viewport, WriteDescriptorSet, QUEUE_FAMILY_IGNORED,
+        SUBPASS_EXTERNAL, TRUE,
     },
     Device, Entry, Instance,
 };
-use inputs::MouseInputs;
 use math::select;
 use nalgebra::{Point3, Unit};
 use nalgebra_glm::{Mat4, Vec2, Vec3, Vec4};
@@ -79,7 +79,7 @@ use self::{shader_utils::create_shader_module, utils::SwapchainProperties};
 use crate::{common::HEIGHT, engine::utils::SwapchainSupportDetails, WIDTH};
 
 pub struct Engine {
-    pub mouse_inputs: MouseInputs,
+    // pub mouse_inputs: MouseInputs,
     command_buffers: Vec<CommandBuffer>,
     command_pool: CommandPool,
     descriptor_set_layout: DescriptorSetLayout,
@@ -258,7 +258,7 @@ impl Engine {
         let in_flight_frames = Self::create_sync_objects(vk_context.device_ref());
 
         Self {
-            mouse_inputs: MouseInputs::new(),
+            // mouse_inputs: MouseInputs::new(),
             _start_instant: Instant::now(),
             resize_dimensions: None,
             vk_context,
@@ -330,7 +330,7 @@ impl Engine {
     }
 
     pub fn draw_frame(&mut self) -> bool {
-        log::trace!("Drawing frame.");
+        // log::trace!("Drawing frame.");
         let sync_objects = self.in_flight_frames.next().unwrap();
         let image_available_semaphore = sync_objects.image_available_semaphore;
         let render_finished_semaphore = sync_objects.render_finished_semaphore;
@@ -1070,7 +1070,7 @@ impl Engine {
             .alpha_to_coverage_enable(false)
             .alpha_to_one_enable(false);
 
-        let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::default()
+        let depth_stencil_info = PipelineDepthStencilStateCreateInfo::default()
             .depth_test_enable(true)
             .depth_write_enable(true)
             .depth_compare_op(vk::CompareOp::LESS)
@@ -2111,7 +2111,8 @@ impl Engine {
     }
 
     fn create_sync_objects(device: &Device) -> InFlightFrames {
-        let mut sync_objects_vec: Vec<SyncObjects> = Vec::new();
+        let mut sync_objects_vec: Vec<SyncObjects> =
+            Vec::with_capacity(MAX_FRAMES_IN_FLIGHT as usize);
 
         for _ in 0..MAX_FRAMES_IN_FLIGHT {
             let image_available_semaphore = {

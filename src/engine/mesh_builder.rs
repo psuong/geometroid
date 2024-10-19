@@ -19,6 +19,7 @@ macro_rules! make_triangle {
     };
 }
 
+#[allow(dead_code)]
 impl MeshBuilder {
     /// Creates a new mesh builder allocating a Vec of vertices and indices.
     /// Note: for every 4 vertices (quad), you have 6 indices

@@ -7,6 +7,7 @@ pub struct Quad {
     pub length: Vec3,
 }
 
+#[allow(dead_code)]
 impl Quad {
     pub fn new(offset: Vec3, width: Vec3, length: Vec3) -> Self {
         Quad {
@@ -43,6 +44,7 @@ pub struct Cube {
     pub center_as_pivot: bool,
 }
 
+#[allow(dead_code)]
 impl Cube {
     pub fn new(
         position: Vec3,
@@ -91,6 +93,7 @@ pub struct Sphere {
     pub radial_segments: i32
 }
 
+#[allow(dead_code)]
 impl Sphere {
     pub fn new(radius: f32, radial_segments: i32) -> Self {
         Sphere {

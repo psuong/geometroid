@@ -3,8 +3,9 @@ mod engine;
 
 use chrono::Local;
 use env_logger::{Builder, Target};
-use log::LevelFilter;
+use log::{info, LevelFilter};
 use std::{fs::File, io::Write};
+use std::time::Instant;
 use winit::{
     dpi::PhysicalSize,
     event::{Event, MouseScrollDelta, WindowEvent},
@@ -48,9 +49,10 @@ fn main() {
     let mut dirty_swapchain = false;
 
     let _ = event_loop.run(move |event, elwt| {
+        let start = Instant::now();
         match event {
             Event::NewEvents(_) => {
-                log::warn!("Use this to reset inputs")
+                // log::warn!("Use this to reset inputs")
             }
             Event::AboutToWait => {
                 // TODO: Handle mouse inputs
@@ -71,7 +73,7 @@ fn main() {
                 WindowEvent::CloseRequested => elwt.exit(),
                 WindowEvent::Resized(..) => dirty_swapchain = true,
                 WindowEvent::CursorMoved { position, .. } => {
-                    log::warn!("Cursor moved not implemented!");
+                    // log::warn!("Cursor moved not implemented!");
                     // let position: (i32, i32) = position.into();
                     // cursor_position = Some([position.0, position.1]);
                 }
@@ -80,12 +82,15 @@ fn main() {
                     ..
                 } => {
                     // wheel_delta = Some(v_lines);
-                    log::warn!("Wheel movement not implemented!");
+                    // log::warn!("Wheel movement not implemented!");
                 }
                 _ => (),
             },
             Event::LoopExiting => engine.wait_gpu_idle(),
             _ => (),
         }
+        let end = Instant::now();
+        let delta = end.duration_since(start);
+        info!("Delta Time in ms: {}", delta.as_millis());
     });
 }

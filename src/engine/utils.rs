@@ -46,7 +46,7 @@ impl InFlightFrames {
     pub fn destroy(&self, device: &Device) {
         self.sync_objects
             .iter()
-            .for_each(|sync| sync.destroy(&device));
+            .for_each(|sync| sync.destroy(device));
     }
 }
 
