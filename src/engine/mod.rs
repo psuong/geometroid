@@ -68,7 +68,8 @@ pub mod utils;
 
 use context::VkContext;
 use debug::{
-    get_layer_names_and_pointers, setup_debug_messenger, ENABLE_VALIDATION_LAYERS, REQUIRED_LAYERS,
+    check_validation_layer_support, get_layer_names_and_pointers, setup_debug_messenger,
+    ENABLE_VALIDATION_LAYERS,
 };
 use utils::QueueFamiliesIndices;
 
@@ -324,7 +325,7 @@ impl Engine {
             .flags(InstanceCreateFlags::default());
 
         if ENABLE_VALIDATION_LAYERS {
-            Self::check_validation_layer_support(entry);
+            check_validation_layer_support(entry);
             instance_create_info = instance_create_info.enabled_layer_names(&layer_names_ptrs);
         }
 
@@ -644,21 +645,6 @@ impl Engine {
     /// Force the engine to wait because ALL vulkan operations are async.
     pub fn wait_gpu_idle(&self) {
         unsafe { self.vk_context.device_ref().device_wait_idle().unwrap() };
-    }
-
-    fn check_validation_layer_support(entry: &Entry) {
-        let supported_layers = unsafe { entry.enumerate_instance_layer_properties().unwrap() };
-        for required in REQUIRED_LAYERS {
-            let found = supported_layers.iter().any(|layer| {
-                let name = unsafe { CStr::from_ptr(layer.layer_name.as_ptr()) };
-                let name = name.to_str().expect("Failed to get layer name pointer");
-                required == name
-            });
-
-            if !found {
-                panic!("Validation layer not supported: {}", required);
-            }
-        }
     }
 
     /// Pick an actual graphics card that exists on the machine.
@@ -1024,12 +1010,11 @@ impl Engine {
             .primitive_restart_enable(false);
 
         let height = swapchain_properties.extent.height as f32;
-        // TODO: Flip the viewport b/c I'm more familiar with OpenGL instead
         let viewport = Viewport {
             x: 0.0,
             y: height,
             width: swapchain_properties.extent.width as _,
-            height: -1.0 * height,
+            height: height * -1.0, 
             min_depth: 0.0,
             max_depth: 1.0,
         };
@@ -1055,8 +1040,8 @@ impl Engine {
             .rasterizer_discard_enable(false)
             .polygon_mode(PolygonMode::FILL)
             .line_width(1.0)
-            .cull_mode(CullModeFlags::FRONT)
-            .front_face(FrontFace::CLOCKWISE)
+            .cull_mode(CullModeFlags::BACK)
+            .front_face(FrontFace::COUNTER_CLOCKWISE)
             .depth_bias_enable(false)
             .depth_bias_constant_factor(0.0)
             .depth_bias_clamp(0.0)
@@ -1075,7 +1060,7 @@ impl Engine {
         let depth_stencil_info = PipelineDepthStencilStateCreateInfo::default()
             .depth_test_enable(true)
             .depth_write_enable(true)
-            .depth_compare_op(vk::CompareOp::LESS)
+            .depth_compare_op(CompareOp::LESS)
             .depth_bounds_test_enable(false)
             .min_depth_bounds(0.0)
             .max_depth_bounds(1.0)

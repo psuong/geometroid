@@ -33,6 +33,21 @@ pub fn get_layer_names_and_pointers() -> (Vec<CString>, Vec<*const i8>) {
     (layer_names, layer_name_pointers)
 }
 
+pub fn check_validation_layer_support(entry: &Entry) {
+    let supported_layers = unsafe { entry.enumerate_instance_layer_properties().unwrap() };
+    for required in REQUIRED_LAYERS {
+        let found = supported_layers.iter().any(|layer| {
+            let name = unsafe { CStr::from_ptr(layer.layer_name.as_ptr()) };
+            let name = name.to_str().expect("Failed to get layer name pointer");
+            required == name
+        });
+
+        if !found {
+            panic!("Validation layer not supported: {}", required);
+        }
+    }
+}
+
 /// Sets up a validation layer to print out all messages and severity because I'm a
 /// beginner and I'm going to need this :)
 pub fn setup_debug_messenger(
