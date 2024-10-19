@@ -13,9 +13,9 @@ use ash::{
         ClearColorValue, ClearDepthStencilValue, ClearValue, ColorComponentFlags, CommandBuffer,
         CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel,
         CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo,
-        CompareOp, CompositeAlphaFlagsKHR, CullModeFlags, DependencyFlags, DescriptorImageInfo,
-        DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize, DescriptorSet,
-        DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding,
+        CompareOp, CompositeAlphaFlagsKHR, CullModeFlags, DependencyFlags, DescriptorBufferInfo,
+        DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize,
+        DescriptorSet, DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding,
         DescriptorSetLayoutCreateInfo, DescriptorType, DeviceCreateInfo, DeviceMemory,
         DeviceQueueCreateInfo, DeviceSize, Extent2D, Extent3D, Fence, FenceCreateFlags,
         FenceCreateInfo, Filter, Format, FormatFeatureFlags, Framebuffer, FramebufferCreateInfo,
@@ -31,11 +31,12 @@ use ash::{
         PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo,
         PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags,
         PipelineVertexInputStateCreateInfo, PipelineViewportStateCreateInfo, PolygonMode,
-        PrimitiveTopology, Queue, QueueFlags, Rect2D, RenderPass, RenderPassBeginInfo,
-        RenderPassCreateInfo, SampleCountFlags, SamplerAddressMode, SamplerMipmapMode,
-        SemaphoreCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo, SubpassContents,
-        SubpassDependency, SubpassDescription, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR,
-        Viewport, WriteDescriptorSet, QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL, TRUE,
+        PresentInfoKHR, PrimitiveTopology, Queue, QueueFlags, Rect2D, RenderPass,
+        RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags, SamplerAddressMode,
+        SamplerCreateInfo, SamplerMipmapMode, SemaphoreCreateInfo, ShaderStageFlags, SharingMode,
+        SubmitInfo, SubpassContents, SubpassDependency, SubpassDescription, SurfaceKHR,
+        SwapchainCreateInfoKHR, SwapchainKHR, Viewport, WriteDescriptorSet, QUEUE_FAMILY_IGNORED,
+        SUBPASS_EXTERNAL, TRUE,
     },
     Device, Entry, Instance,
 };
@@ -352,7 +353,7 @@ impl Engine {
                 self.swapchain_khr,
                 u64::MAX,
                 image_available_semaphore,
-                vk::Fence::null(),
+                Fence::null(),
             )
         };
         let image_index = match result {
@@ -380,7 +381,7 @@ impl Engine {
         {
             let wait_stages = [PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
             let command_buffers = [self.command_buffers[image_index as usize]];
-            let submit_info = vk::SubmitInfo::default()
+            let submit_info = SubmitInfo::default()
                 .wait_semaphores(&wait_semaphores)
                 .wait_dst_stage_mask(&wait_stages)
                 .command_buffers(&command_buffers)
@@ -398,7 +399,7 @@ impl Engine {
         let images_indices = [image_index];
 
         {
-            let present_info = vk::PresentInfoKHR::default()
+            let present_info = PresentInfoKHR::default()
                 .wait_semaphores(&signal_semaphores)
                 .swapchains(&swapchains)
                 .image_indices(&images_indices);
@@ -494,10 +495,10 @@ impl Engine {
             .iter()
             .zip(uniform_buffers.iter())
             .for_each(|(set, buffer)| {
-                let buffer_info = vk::DescriptorBufferInfo::default()
+                let buffer_info = DescriptorBufferInfo::default()
                     .buffer(*buffer)
                     .offset(0)
-                    .range(size_of::<UniformBufferObject>() as vk::DeviceSize);
+                    .range(size_of::<UniformBufferObject>() as DeviceSize);
                 let buffer_infos = [buffer_info];
 
                 // Create the descriptor set for the image here
@@ -1014,7 +1015,7 @@ impl Engine {
             x: 0.0,
             y: height,
             width: swapchain_properties.extent.width as _,
-            height: height * -1.0, 
+            height: height * -1.0,
             min_depth: 0.0,
             max_depth: 1.0,
         };
@@ -1227,26 +1228,26 @@ impl Engine {
     ) -> Texture {
         let image = image::open("assets/textures/viking_room.png").unwrap();
         let image_as_rgb = image.to_rgba8();
-        let extent = vk::Extent2D {
+        let extent = Extent2D {
             width: (image_as_rgb).width(),
             height: (image_as_rgb).height(),
         };
         let max_mip_levels = ((extent.width.min(extent.height) as f32).log2().floor() + 1.0) as u32;
 
         let pixels = image_as_rgb.into_raw();
-        let image_size = (pixels.len() * size_of::<u8>()) as vk::DeviceSize;
+        let image_size = (pixels.len() * size_of::<u8>()) as DeviceSize;
         let device = vk_context.device_ref();
 
         let (buffer, memory, mem_size) = Self::create_buffer(
             vk_context,
             image_size,
-            vk::BufferUsageFlags::TRANSFER_SRC,
-            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+            BufferUsageFlags::TRANSFER_SRC,
+            MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
         );
 
         unsafe {
             let ptr = device
-                .map_memory(memory, 0, image_size, vk::MemoryMapFlags::empty())
+                .map_memory(memory, 0, image_size, MemoryMapFlags::empty())
                 .unwrap();
             let mut align = ash::util::Align::new(ptr, align_of::<u8>() as _, mem_size);
             align.copy_from_slice(&pixels);
@@ -1255,7 +1256,7 @@ impl Engine {
 
         let (image, image_memory) = Self::create_image(
             vk_context,
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            MemoryPropertyFlags::DEVICE_LOCAL,
             extent,
             max_mip_levels,
             SampleCountFlags::TYPE_1,
@@ -1302,12 +1303,12 @@ impl Engine {
             device,
             image,
             max_mip_levels,
-            vk::Format::R8G8B8A8_UNORM,
-            vk::ImageAspectFlags::COLOR,
+            Format::R8G8B8A8_UNORM,
+            ImageAspectFlags::COLOR,
         );
 
         let sampler = {
-            let sampler_info = vk::SamplerCreateInfo::default()
+            let sampler_info = SamplerCreateInfo::default()
                 .mag_filter(Filter::LINEAR)
                 .min_filter(Filter::LINEAR)
                 .address_mode_u(SamplerAddressMode::REPEAT)
@@ -1522,7 +1523,7 @@ impl Engine {
 
     fn generate_mipmaps(
         vk_context: &VkContext,
-        command_pool: vk::CommandPool,
+        command_pool: CommandPool,
         transfer_queue: Queue,
         image: Image,
         extent: Extent2D,
@@ -1710,7 +1711,7 @@ impl Engine {
         transfer_queue: Queue,
         usage: BufferUsageFlags,
         data: &[T],
-    ) -> (vk::Buffer, DeviceMemory) {
+    ) -> (Buffer, DeviceMemory) {
         let size = size_of_val(data) as DeviceSize;
 
         let (staging_buffer, staging_memory, staging_mem_size) = Self::create_buffer(
@@ -1758,8 +1759,8 @@ impl Engine {
     fn create_uniform_buffers(
         vk_context: &VkContext,
         count: usize,
-    ) -> (Vec<vk::Buffer>, Vec<vk::DeviceMemory>) {
-        let size = size_of::<UniformBufferObject>() as vk::DeviceSize;
+    ) -> (Vec<Buffer>, Vec<DeviceMemory>) {
+        let size = size_of::<UniformBufferObject>() as DeviceSize;
         let mut buffers = Vec::new();
         let mut memories = Vec::new();
 
@@ -1767,8 +1768,8 @@ impl Engine {
             let (buffer, memory, _) = Self::create_buffer(
                 vk_context,
                 size,
-                vk::BufferUsageFlags::UNIFORM_BUFFER,
-                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+                BufferUsageFlags::UNIFORM_BUFFER,
+                MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
             );
             buffers.push(buffer);
             memories.push(memory);
@@ -2133,10 +2134,10 @@ impl Engine {
     /// as a depth/stencil attachement.
     fn create_depth_texture(
         vk_context: &VkContext,
-        command_pool: vk::CommandPool,
-        transition_queue: vk::Queue,
-        format: vk::Format,
-        extent: vk::Extent2D,
+        command_pool: CommandPool,
+        transition_queue: Queue,
+        format: Format,
+        extent: Extent2D,
     ) -> Texture {
         let (image, mem) = Self::create_image(
             vk_context,
