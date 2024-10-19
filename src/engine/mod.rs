@@ -7,35 +7,35 @@ use ash::{
     khr::{surface, swapchain as khr_swapchain},
     util::Align,
     vk::{
-        self, AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference,
-        AttachmentStoreOp, BlendFactor, BlendOp, BorderColor, Buffer, BufferCopy, BufferCreateInfo,
-        BufferImageCopy, BufferMemoryBarrier, BufferUsageFlags, ClearColorValue,
-        ClearDepthStencilValue, ClearValue, ColorComponentFlags, CommandBuffer,
+        self, AccessFlags, ApplicationInfo, AttachmentDescription, AttachmentLoadOp,
+        AttachmentReference, AttachmentStoreOp, BlendFactor, BlendOp, BorderColor, Buffer,
+        BufferCopy, BufferCreateInfo, BufferImageCopy, BufferMemoryBarrier, BufferUsageFlags,
+        ClearColorValue, ClearDepthStencilValue, ClearValue, ColorComponentFlags, CommandBuffer,
         CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel,
         CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo,
-        CompareOp, CompositeAlphaFlagsKHR, CullModeFlags, DependencyFlags,
-        DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize,
-        DescriptorSet, DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding,
+        CompareOp, CompositeAlphaFlagsKHR, CullModeFlags, DependencyFlags, DescriptorImageInfo,
+        DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize, DescriptorSet,
+        DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding,
         DescriptorSetLayoutCreateInfo, DescriptorType, DeviceCreateInfo, DeviceMemory,
         DeviceQueueCreateInfo, DeviceSize, Extent2D, Extent3D, Fence, FenceCreateFlags,
         FenceCreateInfo, Filter, Format, FormatFeatureFlags, Framebuffer, FramebufferCreateInfo,
         FrontFace, GraphicsPipelineCreateInfo, Image, ImageAspectFlags, ImageBlit,
         ImageCreateFlags, ImageCreateInfo, ImageLayout, ImageMemoryBarrier, ImageSubresourceLayers,
         ImageSubresourceRange, ImageTiling, ImageType, ImageUsageFlags, ImageView,
-        ImageViewCreateInfo, ImageViewType, IndexType, InstanceCreateFlags, LogicOp,
-        MemoryAllocateInfo, MemoryBarrier, MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements,
-        Offset2D, Offset3D, PhysicalDevice, PhysicalDeviceFeatures, PhysicalDeviceMemoryProperties,
-        Pipeline, PipelineBindPoint, PipelineCache, PipelineColorBlendAttachmentState,
-        PipelineColorBlendStateCreateInfo, PipelineDepthStencilStateCreateInfo,
-        PipelineInputAssemblyStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo,
-        PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo,
-        PipelineShaderStageCreateInfo, PipelineStageFlags, PipelineVertexInputStateCreateInfo,
-        PipelineViewportStateCreateInfo, PolygonMode, PrimitiveTopology, Queue, QueueFlags, Rect2D,
-        RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SampleCountFlags,
-        SamplerAddressMode, SamplerMipmapMode, SemaphoreCreateInfo, ShaderStageFlags, SharingMode,
-        SubmitInfo, SubpassContents, SubpassDependency, SubpassDescription, SurfaceKHR,
-        SwapchainCreateInfoKHR, SwapchainKHR, Viewport, WriteDescriptorSet, QUEUE_FAMILY_IGNORED,
-        SUBPASS_EXTERNAL, TRUE,
+        ImageViewCreateInfo, ImageViewType, IndexType, InstanceCreateFlags, InstanceCreateInfo,
+        LogicOp, MemoryAllocateInfo, MemoryBarrier, MemoryMapFlags, MemoryPropertyFlags,
+        MemoryRequirements, Offset2D, Offset3D, PhysicalDevice, PhysicalDeviceFeatures,
+        PhysicalDeviceMemoryProperties, Pipeline, PipelineBindPoint, PipelineCache,
+        PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo,
+        PipelineDepthStencilStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineLayout,
+        PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo,
+        PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags,
+        PipelineVertexInputStateCreateInfo, PipelineViewportStateCreateInfo, PolygonMode,
+        PrimitiveTopology, Queue, QueueFlags, Rect2D, RenderPass, RenderPassBeginInfo,
+        RenderPassCreateInfo, SampleCountFlags, SamplerAddressMode, SamplerMipmapMode,
+        SemaphoreCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo, SubpassContents,
+        SubpassDependency, SubpassDescription, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR,
+        Viewport, WriteDescriptorSet, QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL, TRUE,
     },
     Device, Entry, Instance,
 };
@@ -81,7 +81,6 @@ use crate::{common::HEIGHT, engine::utils::SwapchainSupportDetails, WIDTH};
 pub struct Engine {
     pub dirty_swapchain: bool,
     // pub mouse_inputs: MouseInputs,
-    
     command_buffers: Vec<CommandBuffer>,
     command_pool: CommandPool,
     descriptor_set_layout: DescriptorSetLayout,
@@ -300,7 +299,7 @@ impl Engine {
     fn create_instance(entry: &Entry, window: &Window) -> Instance {
         let app_name = CString::new("Geometroid").unwrap();
         let engine_name = CString::new("No Engine").unwrap();
-        let app_info = vk::ApplicationInfo::default()
+        let app_info = ApplicationInfo::default()
             .application_name(app_name.as_c_str())
             .application_version(vk::make_api_version(0, 0, 1, 0))
             .engine_name(engine_name.as_c_str())
@@ -319,7 +318,7 @@ impl Engine {
 
         let (_layer_names, layer_names_ptrs) = get_layer_names_and_pointers();
 
-        let mut instance_create_info = vk::InstanceCreateInfo::default()
+        let mut instance_create_info = InstanceCreateInfo::default()
             .application_info(&app_info)
             .enabled_extension_names(&extension_names)
             .flags(InstanceCreateFlags::default());
