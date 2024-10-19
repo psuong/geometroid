@@ -3,14 +3,15 @@ mod engine;
 
 use chrono::Local;
 use env_logger::{Builder, Target};
-use log::{info, LevelFilter};
+use log::LevelFilter;
 use std::{fs::File, io::Write};
-use std::time::Instant;
+use winit::event_loop::ActiveEventLoop;
 use winit::{
+    application::ApplicationHandler,
     dpi::PhysicalSize,
-    event::{Event, MouseScrollDelta, WindowEvent},
-    event_loop::EventLoop,
-    window::WindowBuilder,
+    event::WindowEvent,
+    event_loop::{ControlFlow, EventLoop},
+    window::{Window, WindowId},
 };
 
 use crate::common::{HEIGHT, WIDTH};
@@ -39,58 +40,62 @@ fn main() {
     init_logger(Target::Pipe(target));
 
     let event_loop = EventLoop::new().unwrap();
-    let window = WindowBuilder::new()
-        .with_title("Phylum")
-        .with_inner_size(PhysicalSize::new(WIDTH, HEIGHT))
-        .build(&event_loop)
-        .unwrap();
+    event_loop.set_control_flow(ControlFlow::Poll);
 
-    let mut engine = Engine::new(&window);
-    let mut dirty_swapchain = false;
+    let mut app = App::default();
+    event_loop.run_app(&mut app).unwrap();
+}
 
-    let _ = event_loop.run(move |event, elwt| {
-        let start = Instant::now();
+#[derive(Default)]
+struct App {
+    window: Option<Window>,
+    vulkan: Option<Engine>,
+}
+
+impl ApplicationHandler for App {
+    fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        let window = event_loop
+            .create_window(
+                Window::default_attributes()
+                    .with_inner_size(PhysicalSize::new(WIDTH, HEIGHT))
+                    .with_title("Geometroid"),
+            )
+            .unwrap();
+
+        self.vulkan = Some(Engine::new(&window));
+        self.window = Some(window);
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        _: WindowId,
+        event: WindowEvent,
+    ) {
         match event {
-            Event::NewEvents(_) => {
-                // log::warn!("Use this to reset inputs")
-            }
-            Event::AboutToWait => {
-                // TODO: Handle mouse inputs
-                // Render
-                {
-                    if dirty_swapchain {
-                        let size = window.inner_size();
-                        if size.width > 0 && size.height > 0 {
-                            engine.recreate_swapchain();
-                        } else {
-                            return;
-                        }
-                    }
-                    dirty_swapchain = engine.draw_frame();
-                }
-            }
-            Event::WindowEvent { event, .. } => match event {
-                WindowEvent::CloseRequested => elwt.exit(),
-                WindowEvent::Resized(..) => dirty_swapchain = true,
-                WindowEvent::CursorMoved { position, .. } => {
-                    // log::warn!("Cursor moved not implemented!");
-                    // let position: (i32, i32) = position.into();
-                    // cursor_position = Some([position.0, position.1]);
-                }
-                WindowEvent::MouseWheel {
-                    delta: MouseScrollDelta::LineDelta(_, _v_lines),
-                    ..
-                } => {
-                    // wheel_delta = Some(v_lines);
-                    // log::warn!("Wheel movement not implemented!");
-                }
-                _ => (),
-            },
-            Event::LoopExiting => engine.wait_gpu_idle(),
+            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::Resized(_) => self.vulkan.as_mut().unwrap().dirty_swapchain = true,
             _ => (),
         }
-        let end = Instant::now();
-        let delta = end.duration_since(start);
-        info!("Delta Time in ms: {}", delta.as_millis());
-    });
+    }
+
+    fn about_to_wait(&mut self, _: &ActiveEventLoop) {
+        let app = self.vulkan.as_mut().unwrap();
+        let window = self.window.as_ref().unwrap();
+
+        if app.dirty_swapchain {
+            let size = window.inner_size();
+            if size.width > 0 && size.height > 0 {
+                app.recreate_swapchain();
+            } else {
+                return;
+            }
+        }
+
+        app.dirty_swapchain = app.draw_frame();
+    }
+
+    fn exiting(&mut self, _: &ActiveEventLoop) {
+        self.vulkan.as_ref().unwrap().wait_gpu_idle();
+    }
 }

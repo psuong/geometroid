@@ -79,7 +79,9 @@ use self::{shader_utils::create_shader_module, utils::SwapchainProperties};
 use crate::{common::HEIGHT, engine::utils::SwapchainSupportDetails, WIDTH};
 
 pub struct Engine {
+    pub dirty_swapchain: bool,
     // pub mouse_inputs: MouseInputs,
+    
     command_buffers: Vec<CommandBuffer>,
     command_pool: CommandPool,
     descriptor_set_layout: DescriptorSetLayout,
@@ -258,6 +260,7 @@ impl Engine {
         let in_flight_frames = Self::create_sync_objects(vk_context.device_ref());
 
         Self {
+            dirty_swapchain: false,
             // mouse_inputs: MouseInputs::new(),
             _start_instant: Instant::now(),
             resize_dimensions: None,
