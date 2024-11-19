@@ -131,6 +131,7 @@ fn check_device_extension_support(instance: &Instance, device: PhysicalDevice) -
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
-pub fn get_required_device_extensions() -> [&'static CStr; 1] {
+#[inline(always)]
+fn get_required_device_extensions() -> [&'static CStr; 1] {
     [ash::khr::swapchain::NAME]
 }

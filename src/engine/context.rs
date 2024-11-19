@@ -1,7 +1,7 @@
 use ash::{
     ext::debug_utils,
     khr::surface,
-    vk::{DebugUtilsMessengerEXT, PhysicalDevice, PhysicalDeviceMemoryProperties, SurfaceKHR},
+    vk::{DebugUtilsMessengerEXT, PhysicalDevice, PhysicalDeviceMemoryProperties, SampleCountFlags, SurfaceKHR},
     Device, Entry, Instance,
 };
 
@@ -61,31 +61,31 @@ impl VkContext {
     //     })
     // }
 
-    // pub fn get_max_usable_sample_count(&self) -> SampleCountFlags {
-    //     let props = unsafe {
-    //         self.instance
-    //             .get_physical_device_properties(self.physical_device)
-    //     };
-    //     let color_sample_counts = props.limits.framebuffer_color_sample_counts;
-    //     let depth_sample_counts = props.limits.framebuffer_depth_sample_counts;
-    //     let sample_counts = color_sample_counts.min(depth_sample_counts);
+    pub fn get_max_usable_sample_count(&self) -> SampleCountFlags {
+        let props = unsafe {
+            self.instance
+                .get_physical_device_properties(self.physical_device)
+        };
+        let color_sample_counts = props.limits.framebuffer_color_sample_counts;
+        let depth_sample_counts = props.limits.framebuffer_depth_sample_counts;
+        let sample_counts = color_sample_counts.min(depth_sample_counts);
 
-    //     if sample_counts.contains(SampleCountFlags::TYPE_64) {
-    //         SampleCountFlags::TYPE_64
-    //     } else if sample_counts.contains(SampleCountFlags::TYPE_32) {
-    //         SampleCountFlags::TYPE_32
-    //     } else if sample_counts.contains(SampleCountFlags::TYPE_16) {
-    //         SampleCountFlags::TYPE_16
-    //     } else if sample_counts.contains(SampleCountFlags::TYPE_8) {
-    //         SampleCountFlags::TYPE_8
-    //     } else if sample_counts.contains(SampleCountFlags::TYPE_4) {
-    //         SampleCountFlags::TYPE_4
-    //     } else if sample_counts.contains(SampleCountFlags::TYPE_2) {
-    //         SampleCountFlags::TYPE_2
-    //     } else {
-    //         SampleCountFlags::TYPE_1
-    //     }
-    // }
+        if sample_counts.contains(SampleCountFlags::TYPE_64) {
+            SampleCountFlags::TYPE_64
+        } else if sample_counts.contains(SampleCountFlags::TYPE_32) {
+            SampleCountFlags::TYPE_32
+        } else if sample_counts.contains(SampleCountFlags::TYPE_16) {
+            SampleCountFlags::TYPE_16
+        } else if sample_counts.contains(SampleCountFlags::TYPE_8) {
+            SampleCountFlags::TYPE_8
+        } else if sample_counts.contains(SampleCountFlags::TYPE_4) {
+            SampleCountFlags::TYPE_4
+        } else if sample_counts.contains(SampleCountFlags::TYPE_2) {
+            SampleCountFlags::TYPE_2
+        } else {
+            SampleCountFlags::TYPE_1
+        }
+    }
 
     pub fn instance_ref(&self) -> &Instance {
         &self.instance
