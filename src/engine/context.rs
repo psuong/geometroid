@@ -1,7 +1,10 @@
 use ash::{
     ext::debug_utils,
     khr::surface,
-    vk::{DebugUtilsMessengerEXT, PhysicalDevice, PhysicalDeviceMemoryProperties, SampleCountFlags, SurfaceKHR},
+    vk::{
+        DebugUtilsMessengerEXT, PhysicalDevice, PhysicalDeviceMemoryProperties, SampleCountFlags,
+        SurfaceKHR,
+    },
     Device, Entry, Instance,
 };
 
@@ -42,24 +45,6 @@ impl VkContext {
                 .get_physical_device_memory_properties(self.physical_device)
         }
     }
-
-    // pub fn find_supported_format(
-    //     &self,
-    //     candidates: &[Format],
-    //     tiling: ImageTiling,
-    //     features: FormatFeatureFlags,
-    // ) -> Option<Format> {
-    //     candidates.iter().cloned().find(|candidate| {
-    //         let props = unsafe {
-    //             self.instance
-    //                 .get_physical_device_format_properties(self.physical_device, *candidate)
-    //         };
-
-    //         (tiling == ImageTiling::LINEAR && props.linear_tiling_features.contains(features))
-    //             || (tiling == ImageTiling::OPTIMAL
-    //                 && props.optimal_tiling_features.contains(features))
-    //     })
-    // }
 
     pub fn get_max_usable_sample_count(&self) -> SampleCountFlags {
         let props = unsafe {

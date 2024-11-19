@@ -619,8 +619,21 @@ impl Engine {
 
         let render_pass =
             Self::create_render_pass(device, properties, self.msaa_samples, self.depth_format);
-        let (pipeline, layout) =
-            Self::create_pipeline(device, properties, self.msaa_samples, render_pass, self.descriptor_set_layout);
+        let (pipeline, layout) = Self::create_pipeline(
+            device,
+            properties,
+            self.msaa_samples,
+            render_pass,
+            self.descriptor_set_layout,
+        );
+
+        let color_texture = Self::create_color_texture(
+            &self.vk_context,
+            self.command_pool,
+            self.graphics_queue,
+            properties,
+            self.msaa_samples,
+        );
 
         let depth_texture = Self::create_depth_texture(
             &self.vk_context,
@@ -628,14 +641,6 @@ impl Engine {
             self.graphics_queue,
             self.depth_format,
             properties.extent,
-            self.msaa_samples,
-        );
-
-        let color_texture = Self::create_color_texture(
-            &self.vk_context,
-            self.command_pool,
-            self.graphics_queue,
-            self.swapchain_properties,
             self.msaa_samples,
         );
 
@@ -1060,7 +1065,7 @@ impl Engine {
             .load_op(AttachmentLoadOp::CLEAR)
             .store_op(AttachmentStoreOp::STORE)
             .initial_layout(ImageLayout::UNDEFINED)
-            .final_layout(ImageLayout::PRESENT_SRC_KHR);
+            .final_layout(ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
 
         let depth_attachment_desc = AttachmentDescription::default()
             .format(depth_format)
@@ -1082,22 +1087,32 @@ impl Engine {
             .initial_layout(ImageLayout::UNDEFINED)
             .final_layout(ImageLayout::PRESENT_SRC_KHR);
 
-        let attachment_descs = [color_attachment_desc, depth_attachment_desc, resolve_attachment_desc];
+        let attachment_descs = [
+            color_attachment_desc,
+            depth_attachment_desc,
+            resolve_attachment_desc,
+        ];
 
         // The first attachment is pretty much a color buffer
         let color_attachment_ref = AttachmentReference::default()
             .attachment(0)
             .layout(ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
-        let attachment_refs = [color_attachment_ref];
+        let color_attachment_refs = [color_attachment_ref];
 
         let depth_attachment_ref = AttachmentReference::default()
             .attachment(1)
             .layout(ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
+        let resolve_attachment_ref = AttachmentReference::default()
+            .attachment(2)
+            .layout(ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+        let resolve_attachment_refs = [resolve_attachment_ref];
+
         // Every subpass references 1 or more attachment descriptions.
         let subpass_desc = SubpassDescription::default()
             .pipeline_bind_point(PipelineBindPoint::GRAPHICS)
-            .color_attachments(&attachment_refs)
+            .color_attachments(&color_attachment_refs)
+            .resolve_attachments(&resolve_attachment_refs)
             .depth_stencil_attachment(&depth_attachment_ref);
         let subpass_descs = [subpass_desc];
 
