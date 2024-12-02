@@ -1,5 +1,6 @@
 pub(crate) use crate::common::MAX_FRAMES_IN_FLIGHT;
 use crate::engine::{render::Vertex, shader_utils::read_shader_from_file};
+use crate::math::{select, FORWARD, UP};
 
 use array_util::{as_array, empty};
 use ash::{
@@ -39,7 +40,6 @@ use ash::{
     },
     Device, Entry, Instance,
 };
-use math::{select, FORWARD, UP};
 use nalgebra::{Point3, Unit};
 use nalgebra_glm::{Mat4, Vec2, Vec3, Vec4};
 use physical_devices::pick_physical_device;
@@ -58,7 +58,6 @@ pub mod camera;
 pub mod context;
 pub mod debug;
 pub mod inputs;
-pub mod math;
 pub mod mesh_builder;
 pub mod physical_devices;
 pub mod render;

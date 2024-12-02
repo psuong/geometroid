@@ -1,5 +1,5 @@
-use super::math::{FORWARD, RIGHT, UP};
 use nalgebra_glm::Vec3;
+use crate::math::{FORWARD, RIGHT, UP};
 
 pub struct Quad {
     pub offset: Vec3,

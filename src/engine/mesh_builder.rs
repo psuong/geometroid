@@ -1,5 +1,5 @@
+use crate::math::{FORWARD, RIGHT, UP};
 use super::{
-    math::{FORWARD, RIGHT, UP},
     render::Vertex,
     shapes::{Cube, Quad, Sphere},
 };
