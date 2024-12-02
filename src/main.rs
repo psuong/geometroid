@@ -1,6 +1,7 @@
 mod common;
 mod math;
 mod engine;
+mod ui;
 
 use chrono::Local;
 use env_logger::{Builder, Target};

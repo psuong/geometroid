@@ -10,12 +10,12 @@ use ash::{
 
 pub struct VkContext {
     _entry: Entry,
-    instance: Instance,
+    pub instance: Instance,
     debug_report_callback: Option<(debug_utils::Instance, DebugUtilsMessengerEXT)>,
     surface: surface::Instance,
     surface_khr: SurfaceKHR,
-    physical_device: PhysicalDevice,
-    device: Device,
+    pub physical_device: PhysicalDevice,
+    pub device: Device,
 }
 
 impl VkContext {

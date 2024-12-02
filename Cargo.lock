@@ -613,6 +613,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "egui-ash-renderer"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c34546802d5824eb2e14540c9c447d7fa489b4ab8a775cc2c02c5624467b8d3"
+dependencies = [
+ "ash",
+ "egui",
+ "log",
+ "thiserror",
+]
+
+[[package]]
 name = "either"
 version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -793,6 +805,7 @@ dependencies = [
  "ash-window",
  "chrono",
  "egui",
+ "egui-ash-renderer",
  "env_logger",
  "image",
  "log",

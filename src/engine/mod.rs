@@ -84,11 +84,11 @@ pub struct Engine {
     pub dirty_swapchain: bool,
     // pub mouse_inputs: MouseInputs,
     command_buffers: Vec<CommandBuffer>,
-    command_pool: CommandPool,
+    pub command_pool: CommandPool,
     descriptor_set_layout: DescriptorSetLayout,
     descriptor_pool: DescriptorPool,
     descriptor_sets: Vec<DescriptorSet>,
-    graphics_queue: Queue,
+    pub graphics_queue: Queue,
     images: Vec<Image>,
     in_flight_frames: InFlightFrames,
     index_buffer: Buffer,
@@ -116,7 +116,7 @@ pub struct Engine {
     uniform_buffer_memories: Vec<DeviceMemory>,
     vertex_buffer: Buffer,
     vertex_buffer_memory: DeviceMemory,
-    vk_context: VkContext,
+    pub vk_context: VkContext,
 }
 
 impl Engine {
