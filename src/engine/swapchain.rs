@@ -1,28 +1,31 @@
 use std::error::Error;
 
 use ash::{
-    khr::swapchain::Device,
+    khr::{surface, swapchain::Device, swapchain as khr_swapchain},
     vk::{
         AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference,
         AttachmentStoreOp, ColorSpaceKHR, CompositeAlphaFlagsKHR, Extent2D, Format, Framebuffer,
         Image, ImageAspectFlags, ImageLayout, ImageSubresourceRange, ImageUsageFlags, ImageView,
-        ImageViewCreateInfo, ImageViewType, PipelineBindPoint, PipelineStageFlags, PresentModeKHR,
-        RenderPass, RenderPassCreateInfo, SampleCountFlags, SharingMode, SubpassDependency,
-        SubpassDescription, SwapchainCreateInfoKHR, SwapchainKHR, SUBPASS_EXTERNAL,
+        ImageViewCreateInfo, ImageViewType, PhysicalDevice, PipelineBindPoint, PipelineStageFlags,
+        PresentModeKHR, RenderPass, RenderPassCreateInfo, SampleCountFlags, SharingMode,
+        SubpassDependency, SubpassDescription, SurfaceCapabilitiesKHR, SurfaceFormatKHR,
+        SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR, SUBPASS_EXTERNAL,
     },
 };
 use log::debug;
 
+use super::{context::VkContext, utils::QueueFamiliesIndices};
 use crate::common::{HEIGHT, WIDTH};
 
-use super::{
-    context::VkContext,
-    utils::{QueueFamiliesIndices, SwapchainProperties},
-};
+#[derive(Clone, Copy, Debug)]
+pub struct SwapchainProperties {
+    pub format: SurfaceFormatKHR,
+    pub present_mode: PresentModeKHR,
+    pub extent: Extent2D,
+}
 
 // NOTE: I really have no idea if this will work
 struct Swapchain {
-    // TODO: Store the extent here
     loader: Device,
     extent: Extent2D,
     khr: SwapchainKHR,
@@ -30,6 +33,81 @@ struct Swapchain {
     image_views: Vec<ImageView>,
     render_pass: RenderPass,
     framebuffers: Vec<Framebuffer>,
+    swapchain_properties: SwapchainProperties,
+}
+
+pub struct SwapchainSupportDetails {
+    pub capabilities: SurfaceCapabilitiesKHR,
+    pub formats: Vec<SurfaceFormatKHR>,
+    pub present_modes: Vec<PresentModeKHR>,
+}
+
+impl SwapchainSupportDetails {
+    pub fn new(
+        device: PhysicalDevice,
+        surface: &surface::Instance,
+        surface_khr: SurfaceKHR,
+    ) -> Self {
+        let capabilities = unsafe {
+            surface
+                .get_physical_device_surface_capabilities(device, surface_khr)
+                .unwrap()
+        };
+
+        let formats = unsafe {
+            surface
+                .get_physical_device_surface_formats(device, surface_khr)
+                .unwrap()
+        };
+
+        let present_modes = unsafe {
+            surface
+                .get_physical_device_surface_present_modes(device, surface_khr)
+                .unwrap()
+        };
+
+        Self {
+            capabilities,
+            formats,
+            present_modes,
+        }
+    }
+
+    pub fn get_ideal_swapchain_properties(
+        &self,
+        preferred_dimensions: [u32; 2],
+    ) -> SwapchainProperties {
+        let format = choose_swapchain_surface_format(&self.formats);
+        let present_mode = choose_swapchain_surface_present_mode(&self.present_modes);
+        let extent = Self::choose_swapchain_extent(self.capabilities, &preferred_dimensions);
+        SwapchainProperties {
+            format,
+            present_mode,
+            extent,
+        }
+    }
+
+    /// Creates the swapchain extent, which is typically the resolution of the windowing surface.
+    /// I _think_ this is where - if I wanted to implement FSR, I can do half resolution and
+    /// upscale it.
+    /// TODO: Definitely try implementing FSR :)
+    fn choose_swapchain_extent(
+        capabilities: SurfaceCapabilitiesKHR,
+        preferred_dimensions: &[u32; 2],
+    ) -> Extent2D {
+        // Pick the animation studio.
+        if capabilities.current_extent.width != u32::MAX {
+            return capabilities.current_extent;
+        }
+
+        let min = capabilities.min_image_extent;
+        let max = capabilities.max_image_extent;
+
+        Extent2D {
+            width: preferred_dimensions[0].min(max.width).max(min.width),
+            height: preferred_dimensions[1].min(max.height).max(min.height),
+        }
+    }
 }
 
 struct SwapchainSetup {
@@ -46,7 +124,7 @@ impl Swapchain {
         vulkan_context: &VkContext,
         queue_family_indices: QueueFamiliesIndices,
     ) -> Result<Self, Box<dyn Error>> {
-        let swapchain_setup = create_vulkan_swapchain(vulkan_context, queue_family_indices);
+        todo!()
     }
 }
 
@@ -187,7 +265,7 @@ fn create_vulkan_swapchain(
     })
 }
 
-fn create_render_pass(
+pub fn create_render_pass(
     device: &ash::Device,
     swapchain_properties: SwapchainProperties,
     msaa_samples: SampleCountFlags,
@@ -298,4 +376,146 @@ pub fn create_image_view(
         });
 
     unsafe { device.create_image_view(&create_info, None).unwrap() }
+}
+
+/// Does exactly what it says, chooses the swap chain format based on whatever is available.
+/// If R8G8R8A8 is available then it is selected.
+fn choose_swapchain_surface_format(available_formats: &[SurfaceFormatKHR]) -> SurfaceFormatKHR {
+    if available_formats.len() == 1 && available_formats[0].format == Format::UNDEFINED {
+        return SurfaceFormatKHR {
+            format: Format::B8G8R8A8_UNORM,
+            color_space: ColorSpaceKHR::SRGB_NONLINEAR,
+        };
+    }
+
+    *available_formats
+        .iter()
+        .find(|format| {
+            format.format == Format::B8G8R8_UNORM
+                && format.color_space == ColorSpaceKHR::SRGB_NONLINEAR
+        })
+        .unwrap_or(&available_formats[0])
+}
+
+/// Chooses the swapchain present mode. MAILBOX -> FIFO -> IMMEDIATE are the order of priority
+/// when chosen.
+///
+/// IMMEDIATE means that the moment the image is submitted to the screen, the image is shown
+/// right away! May cause tearing.
+///
+/// FIFO follows the queue priority. This is pretty much like most modern games with VSYNC.
+/// Submit - if queue is full, wait until queue is emptied.
+///
+/// MAILBOX is like a queue & immediate mode. If the presentation queue is filled to the brim,
+/// then we just overwrite whatever is in queue.
+fn choose_swapchain_surface_present_mode(
+    available_present_modes: &[PresentModeKHR],
+) -> PresentModeKHR {
+    if available_present_modes.contains(&PresentModeKHR::MAILBOX) {
+        PresentModeKHR::MAILBOX
+    } else if available_present_modes.contains(&PresentModeKHR::FIFO) {
+        PresentModeKHR::FIFO
+    } else {
+        PresentModeKHR::IMMEDIATE
+    }
+}
+
+pub fn create_swapchain_and_images(
+    vk_context: &VkContext,
+    queue_families_indices: QueueFamiliesIndices,
+    dimensions: [u32; 2],
+) -> (
+    khr_swapchain::Device,
+    SwapchainKHR,
+    SwapchainProperties,
+    Vec<Image>,
+) {
+    let details = SwapchainSupportDetails::new(
+        vk_context.physical_device_ref(),
+        vk_context.surface_ref(),
+        vk_context.surface_khr,
+    );
+
+    let properties = details.get_ideal_swapchain_properties(dimensions);
+
+    let format = properties.format;
+    let present_mode = properties.present_mode;
+    let extent = properties.extent;
+
+    // When selecting the image count, a size of 1 may cause us to wait before displaying the
+    // second image. When we can use multiple images, we should try to.
+    let image_count = {
+        let max = details.capabilities.max_image_count;
+        let mut preferred = details.capabilities.min_image_count + 1;
+        if max > 0 && preferred > max {
+            preferred = max;
+        }
+
+        preferred
+    };
+
+    log::debug!(
+            "Creating swapchain. \n\tFormat: {:?}\n\tColorSpace: {:?}\n\tPresent Mode: {:?}\n\tExtent: {:?}\n\tImage Count: {:?}",
+            format.format,
+            format.color_space,
+            present_mode,
+            extent,
+            image_count
+            );
+
+    let graphics = queue_families_indices.graphics_index;
+    let present = queue_families_indices.present_index;
+    let families_indices = [graphics, present];
+
+    let create_info = {
+        let mut builder = SwapchainCreateInfoKHR::default()
+            .surface(vk_context.surface_khr)
+            .min_image_count(image_count)
+            .image_format(format.format)
+            .image_color_space(format.color_space)
+            .image_extent(extent)
+            .image_array_layers(1)
+            .image_usage(ImageUsageFlags::COLOR_ATTACHMENT);
+
+        builder = if graphics != present {
+            builder
+                .image_sharing_mode(SharingMode::CONCURRENT)
+                .queue_family_indices(&families_indices)
+        } else {
+            builder.image_sharing_mode(SharingMode::EXCLUSIVE)
+        };
+
+        builder
+            .pre_transform(details.capabilities.current_transform)
+            .composite_alpha(CompositeAlphaFlagsKHR::OPAQUE)
+            .present_mode(present_mode)
+            .clipped(true)
+    };
+
+    let swapchain = khr_swapchain::Device::new(vk_context.instance_ref(), vk_context.device_ref());
+    let swapchain_khr = unsafe { swapchain.create_swapchain(&create_info, None).unwrap() };
+    let images = unsafe { swapchain.get_swapchain_images(swapchain_khr).unwrap() };
+    (swapchain, swapchain_khr, properties, images)
+}
+
+/// Creates a VKImageView so that we can use VKImage in the render pipeline. Image Views
+/// describe how to access the image and which part of the images we can access. E.g. depth maps
+/// don't need to be mipmapped since it's just a single view of the entire screen.
+pub fn create_swapchain_image_views(
+    device: &ash::Device,
+    swapchain_images: &[Image],
+    swapchain_properties: SwapchainProperties,
+) -> Vec<ImageView> {
+    swapchain_images
+        .iter()
+        .map(|image| {
+            create_image_view(
+                device,
+                *image,
+                1,
+                swapchain_properties.format.format,
+                ImageAspectFlags::COLOR,
+            )
+        })
+        .collect::<Vec<ImageView>>()
 }

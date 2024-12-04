@@ -8,7 +8,7 @@ use ash::{
 
 use crate::engine::utils::QueueFamiliesIndices;
 
-use super::utils::SwapchainSupportDetails;
+use super::swapchain::SwapchainSupportDetails;
 
 /// Attempts to pick the physical graphics device that supports what we need. The highest priority
 /// is a discrete GPU and supports our device. Otherwise, we need to just pick a device that

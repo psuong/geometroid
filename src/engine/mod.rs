@@ -5,16 +5,15 @@ use crate::math::{select, FORWARD, UP};
 use array_util::{as_array, empty};
 use ash::{
     ext::debug_utils,
-    khr::{surface, swapchain as khr_swapchain},
+    khr::surface as khr_surface,
     util::Align,
     vk::{
-        self, AccessFlags, ApplicationInfo, AttachmentDescription, AttachmentLoadOp,
-        AttachmentReference, AttachmentStoreOp, BlendFactor, BlendOp, BorderColor, Buffer,
+        self, AccessFlags, ApplicationInfo, BlendFactor, BlendOp, BorderColor, Buffer,
         BufferCopy, BufferCreateInfo, BufferImageCopy, BufferMemoryBarrier, BufferUsageFlags,
         ClearColorValue, ClearDepthStencilValue, ClearValue, ColorComponentFlags, CommandBuffer,
         CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel,
         CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo,
-        CompareOp, CompositeAlphaFlagsKHR, CullModeFlags, DependencyFlags, DescriptorBufferInfo,
+        CompareOp, CullModeFlags, DependencyFlags, DescriptorBufferInfo,
         DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize,
         DescriptorSet, DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding,
         DescriptorSetLayoutCreateInfo, DescriptorType, DeviceCreateInfo, DeviceMemory,
@@ -33,10 +32,9 @@ use ash::{
         PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags,
         PipelineVertexInputStateCreateInfo, PipelineViewportStateCreateInfo, PolygonMode,
         PresentInfoKHR, PrimitiveTopology, Queue, Rect2D, RenderPass, RenderPassBeginInfo,
-        RenderPassCreateInfo, SampleCountFlags, SamplerAddressMode, SamplerCreateInfo,
+        SampleCountFlags, SamplerAddressMode, SamplerCreateInfo,
         SamplerMipmapMode, SemaphoreCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo,
-        SubpassContents, SubpassDependency, SubpassDescription, SwapchainCreateInfoKHR,
-        SwapchainKHR, Viewport, WriteDescriptorSet, QUEUE_FAMILY_IGNORED, SUBPASS_EXTERNAL,
+        SubpassContents, Viewport, WriteDescriptorSet, QUEUE_FAMILY_IGNORED,
     },
     Device, Entry, Instance,
 };
@@ -44,6 +42,7 @@ use nalgebra::{Point3, Unit};
 use nalgebra_glm::{Mat4, Vec2, Vec3, Vec4};
 use physical_devices::pick_physical_device;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+use swapchain::{create_render_pass, create_swapchain_and_images, create_swapchain_image_views, SwapchainProperties};
 use std::{
     ffi::{CStr, CString},
     mem::{align_of, size_of},
@@ -78,8 +77,8 @@ use utils::QueueFamiliesIndices;
 use self::texture::Texture;
 use self::uniform_buffer_object::UniformBufferObject;
 use self::utils::{InFlightFrames, SyncObjects};
-use self::{shader_utils::create_shader_module, utils::SwapchainProperties};
-use crate::{common::HEIGHT, engine::utils::SwapchainSupportDetails, WIDTH};
+use self::shader_utils::create_shader_module;
+use crate::{common::HEIGHT, WIDTH};
 
 pub struct Engine {
     pub dirty_swapchain: bool,
@@ -90,7 +89,7 @@ pub struct Engine {
     descriptor_pool: DescriptorPool,
     descriptor_sets: Vec<DescriptorSet>,
     pub graphics_queue: Queue,
-    images: Vec<Image>, // TODO: Move to a swapchain struct
+    // images: Vec<Image>, // TODO: Move to a swapchain struct
     in_flight_frames: InFlightFrames,
     index_buffer: Buffer,
     index_buffer_memory: DeviceMemory,
@@ -98,13 +97,13 @@ pub struct Engine {
     pipeline_layout: PipelineLayout,
     present_queue: Queue,
     queue_families_indices: QueueFamiliesIndices,
-    render_pass: RenderPass, // TODO: Move to a swapchain struct
+    // render_pass: RenderPass, // TODO: Move to a swapchain struct
     resize_dimensions: Option<[u32; 2]>,
     _start_instant: Instant,
-    swapchain: khr_swapchain::Device, // TODO: Move to a swapchain struct
-    swapchain_framebuffers: Vec<Framebuffer>, // TODO: Move to a swapchain struct
-    swapchain_image_views: Vec<ImageView>, // TODO: Move to a swapchain struct
-    swapchain_khr: SwapchainKHR,      // TODO: Move to a swapchain struct
+    // swapchain: khr_swapchain::Device, // TODO: Move to a swapchain struct
+    // swapchain_framebuffers: Vec<Framebuffer>, // TODO: Move to a swapchain struct
+    // swapchain_image_views: Vec<ImageView>, // TODO: Move to a swapchain struct
+    // swapchain_khr: SwapchainKHR,      // TODO: Move to a swapchain struct
     swapchain_properties: SwapchainProperties,
     transient_command_pool: CommandPool,
     msaa_samples: SampleCountFlags,
@@ -126,7 +125,7 @@ impl Engine {
         let instance = Self::create_instance(&entry, window);
         let debug_report_callback = setup_debug_messenger(&entry, &instance);
 
-        let surface = surface::Instance::new(&entry, &instance);
+        let surface = khr_surface::Instance::new(&entry, &instance);
         let surface_khr = unsafe {
             ash_window::create_surface(
                 &entry,
@@ -159,16 +158,17 @@ impl Engine {
         );
 
         let dimensions = [WIDTH, HEIGHT];
+        
         let (swapchain, swapchain_khr, properties, images) =
-            Self::create_swapchain_and_images(&vk_context, queue_families_indices, dimensions);
+            create_swapchain_and_images(&vk_context, queue_families_indices, dimensions);
 
         let swapchain_image_views =
-            Self::create_swapchain_image_views(vk_context.device_ref(), &images, properties);
+            create_swapchain_image_views(vk_context.device_ref(), &images, properties);
 
         let msaa_samples = vk_context.get_max_usable_sample_count();
         let depth_format = Self::find_depth_format(vk_context.instance_ref(), physical_device);
 
-        let render_pass = Self::create_render_pass(
+        let render_pass = create_render_pass(
             vk_context.device_ref(),
             properties,
             msaa_samples,
@@ -288,16 +288,16 @@ impl Engine {
             queue_families_indices,
             graphics_queue,
             present_queue,
-            swapchain,
-            swapchain_khr,
+            // swapchain,
+            // swapchain_khr,
             swapchain_properties: properties,
-            images,
-            swapchain_image_views,
-            render_pass,
+            // images,
+            // swapchain_image_views,
+            // render_pass,
             descriptor_set_layout,
             pipeline_layout: layout,
             pipeline,
-            swapchain_framebuffers,
+            // swapchain_framebuffers,
             command_pool,
             transient_command_pool,
             msaa_samples,
@@ -667,17 +667,17 @@ impl Engine {
             pipeline,
         );
 
-        self.swapchain = swapchain;
-        self.swapchain_khr = swapchain_khr;
+        // self.swapchain = swapchain;
+        // self.swapchain_khr = swapchain_khr;
         self.swapchain_properties = properties;
-        self.images = images;
-        self.swapchain_image_views = swapchain_image_views;
-        self.render_pass = render_pass;
+        // self.images = images;
+        // self.swapchain_image_views = swapchain_image_views;
+        // self.render_pass = render_pass;
         self.pipeline = pipeline;
         self.pipeline_layout = layout;
         self.color_texture = color_texture;
         self.depth_texture = depth_texture;
-        self.swapchain_framebuffers = swapchain_framebuffers;
+        // self.swapchain_framebuffers = swapchain_framebuffers;
         self.command_buffers = command_buffers;
     }
 
@@ -744,86 +744,6 @@ impl Engine {
     #[cfg(not(any(target_os = "macos", target_os = "ios")))]
     fn get_required_device_extensions() -> [&'static CStr; 1] {
         [khr_swapchain::NAME]
-    }
-
-    #[deprecated(note = "Use swapchain.rs instead")]
-    fn create_swapchain_and_images(
-        vk_context: &VkContext,
-        queue_families_indices: QueueFamiliesIndices,
-        dimensions: [u32; 2],
-    ) -> (
-        khr_swapchain::Device,
-        SwapchainKHR,
-        SwapchainProperties,
-        Vec<Image>,
-    ) {
-        let details = SwapchainSupportDetails::new(
-            vk_context.physical_device_ref(),
-            vk_context.surface_ref(),
-            vk_context.surface_khr(),
-        );
-
-        let properties = details.get_ideal_swapchain_properties(dimensions);
-
-        let format = properties.format;
-        let present_mode = properties.present_mode;
-        let extent = properties.extent;
-
-        // When selecting the image count, a size of 1 may cause us to wait before displaying the
-        // second image. When we can use multiple images, we should try to.
-        let image_count = {
-            let max = details.capabilities.max_image_count;
-            let mut preferred = details.capabilities.min_image_count + 1;
-            if max > 0 && preferred > max {
-                preferred = max;
-            }
-
-            preferred
-        };
-
-        log::debug!(
-            "Creating swapchain. \n\tFormat: {:?}\n\tColorSpace: {:?}\n\tPresent Mode: {:?}\n\tExtent: {:?}\n\tImage Count: {:?}",
-            format.format,
-            format.color_space,
-            present_mode,
-            extent,
-            image_count
-            );
-
-        let graphics = queue_families_indices.graphics_index;
-        let present = queue_families_indices.present_index;
-        let families_indices = [graphics, present];
-
-        let create_info = {
-            let mut builder = SwapchainCreateInfoKHR::default()
-                .surface(vk_context.surface_khr)
-                .min_image_count(image_count)
-                .image_format(format.format)
-                .image_color_space(format.color_space)
-                .image_extent(extent)
-                .image_array_layers(1)
-                .image_usage(ImageUsageFlags::COLOR_ATTACHMENT);
-
-            builder = if graphics != present {
-                builder
-                    .image_sharing_mode(SharingMode::CONCURRENT)
-                    .queue_family_indices(&families_indices)
-            } else {
-                builder.image_sharing_mode(SharingMode::EXCLUSIVE)
-            };
-
-            builder
-                .pre_transform(details.capabilities.current_transform)
-                .composite_alpha(CompositeAlphaFlagsKHR::OPAQUE)
-                .present_mode(present_mode)
-                .clipped(true)
-        };
-
-        let swapchain =
-            khr_swapchain::Device::new(vk_context.instance_ref(), vk_context.device_ref());
-        let swapchain_khr = unsafe { swapchain.create_swapchain(&create_info, None).unwrap() };
-        let images = unsafe { swapchain.get_swapchain_images(swapchain_khr).unwrap() };
-        (swapchain, swapchain_khr, properties, images)
     }
 
     /// Creates a VKImageView so that we can use VKImage in the render pipeline. Image Views
@@ -1051,100 +971,6 @@ impl Engine {
         };
 
         (pipeline, layout)
-    }
-
-    /// Create the renderpass + multiple subpasses. Subpasses are rendering ops that rely on the
-    /// previous framebuffer. Post processing fx are common subpasses.
-    #[deprecated(note = "See swapchain.rs")]
-    fn create_render_pass(
-        device: &Device,
-        swapchain_properties: SwapchainProperties,
-        msaa_samples: SampleCountFlags,
-        depth_format: Format,
-    ) -> RenderPass {
-        let color_attachment_desc = AttachmentDescription::default()
-            .format(swapchain_properties.format.format)
-            .samples(msaa_samples)
-            .load_op(AttachmentLoadOp::CLEAR)
-            .store_op(AttachmentStoreOp::STORE)
-            .initial_layout(ImageLayout::UNDEFINED)
-            .final_layout(ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
-
-        let depth_attachment_desc = AttachmentDescription::default()
-            .format(depth_format)
-            .samples(msaa_samples)
-            .load_op(AttachmentLoadOp::CLEAR)
-            .store_op(AttachmentStoreOp::DONT_CARE)
-            .stencil_load_op(AttachmentLoadOp::DONT_CARE)
-            .stencil_store_op(AttachmentStoreOp::DONT_CARE)
-            .initial_layout(ImageLayout::UNDEFINED)
-            .final_layout(ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-
-        let resolve_attachment_desc = AttachmentDescription::default()
-            .format(swapchain_properties.format.format)
-            .samples(SampleCountFlags::TYPE_1)
-            .load_op(AttachmentLoadOp::DONT_CARE)
-            .store_op(AttachmentStoreOp::STORE)
-            .stencil_load_op(AttachmentLoadOp::DONT_CARE)
-            .stencil_store_op(AttachmentStoreOp::DONT_CARE)
-            .initial_layout(ImageLayout::UNDEFINED)
-            .final_layout(ImageLayout::PRESENT_SRC_KHR);
-
-        let attachment_descs = [
-            color_attachment_desc,
-            depth_attachment_desc,
-            resolve_attachment_desc,
-        ];
-
-        // The first attachment is pretty much a color buffer
-        let color_attachment_ref = AttachmentReference::default()
-            .attachment(0)
-            .layout(ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
-        let color_attachment_refs = [color_attachment_ref];
-
-        let depth_attachment_ref = AttachmentReference::default()
-            .attachment(1)
-            .layout(ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-
-        let resolve_attachment_ref = AttachmentReference::default()
-            .attachment(2)
-            .layout(ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
-        let resolve_attachment_refs = [resolve_attachment_ref];
-
-        // Every subpass references 1 or more attachment descriptions.
-        let subpass_desc = SubpassDescription::default()
-            .pipeline_bind_point(PipelineBindPoint::GRAPHICS)
-            .color_attachments(&color_attachment_refs)
-            .resolve_attachments(&resolve_attachment_refs)
-            .depth_stencil_attachment(&depth_attachment_ref);
-        let subpass_descs = [subpass_desc];
-
-        // Subpasses in a render pass automatically take care of image layout transitions.
-        // Transitions are controlled by subpass dependencies, which describe the memory layout &
-        // execution dependencies between each subpass.
-        //
-        // There are typically 2 builtin dependencies that take care of the transiation at the
-        // start + end of the renderpass.
-        //
-        // The subpass here uses the COLOR_ATTACHMENT_OUTPUT. Another way is to make the semaphore
-        // to PIPELINE_STAGE_TOP_OF_PIPE_BIT instead (TODO: Look into this and remove the subpass).
-        let subpass_dep = SubpassDependency::default()
-            .src_subpass(SUBPASS_EXTERNAL)
-            .dst_subpass(0)
-            .src_stage_mask(PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .src_access_mask(AccessFlags::empty())
-            .dst_stage_mask(PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .dst_access_mask(
-                AccessFlags::COLOR_ATTACHMENT_READ | AccessFlags::COLOR_ATTACHMENT_WRITE,
-            );
-        let subpass_deps = [subpass_dep];
-
-        let render_pass_info = RenderPassCreateInfo::default()
-            .attachments(&attachment_descs)
-            .subpasses(&subpass_descs)
-            .dependencies(&subpass_deps);
-
-        unsafe { device.create_render_pass(&render_pass_info, None).unwrap() }
     }
 
     /// Iterate through each image in the image view and create a framebuffer for each of them.
