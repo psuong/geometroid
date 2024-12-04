@@ -12,8 +12,8 @@ pub struct VkContext {
     _entry: Entry,
     pub instance: Instance,
     debug_report_callback: Option<(debug_utils::Instance, DebugUtilsMessengerEXT)>,
-    surface: surface::Instance,
-    surface_khr: SurfaceKHR,
+    pub surface: surface::Instance,
+    pub surface_khr: SurfaceKHR,
     pub physical_device: PhysicalDevice,
     pub device: Device,
 }
@@ -79,7 +79,8 @@ impl VkContext {
     pub fn surface_ref(&self) -> &surface::Instance {
         &self.surface
     }
-
+    
+    #[deprecated]
     pub fn surface_khr(&self) -> SurfaceKHR {
         self.surface_khr
     }

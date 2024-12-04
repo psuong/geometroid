@@ -63,6 +63,7 @@ pub mod physical_devices;
 pub mod render;
 pub mod shader_utils;
 pub mod shapes;
+pub mod swapchain;
 pub mod texture;
 pub mod uniform_buffer_object;
 pub mod utils;
@@ -89,7 +90,7 @@ pub struct Engine {
     descriptor_pool: DescriptorPool,
     descriptor_sets: Vec<DescriptorSet>,
     pub graphics_queue: Queue,
-    images: Vec<Image>,
+    images: Vec<Image>, // TODO: Move to a swapchain struct
     in_flight_frames: InFlightFrames,
     index_buffer: Buffer,
     index_buffer_memory: DeviceMemory,
@@ -97,13 +98,13 @@ pub struct Engine {
     pipeline_layout: PipelineLayout,
     present_queue: Queue,
     queue_families_indices: QueueFamiliesIndices,
-    render_pass: RenderPass,
+    render_pass: RenderPass, // TODO: Move to a swapchain struct
     resize_dimensions: Option<[u32; 2]>,
     _start_instant: Instant,
-    swapchain: khr_swapchain::Device,
-    swapchain_framebuffers: Vec<Framebuffer>,
-    swapchain_image_views: Vec<ImageView>,
-    swapchain_khr: SwapchainKHR,
+    swapchain: khr_swapchain::Device, // TODO: Move to a swapchain struct
+    swapchain_framebuffers: Vec<Framebuffer>, // TODO: Move to a swapchain struct
+    swapchain_image_views: Vec<ImageView>, // TODO: Move to a swapchain struct
+    swapchain_khr: SwapchainKHR,      // TODO: Move to a swapchain struct
     swapchain_properties: SwapchainProperties,
     transient_command_pool: CommandPool,
     msaa_samples: SampleCountFlags,
@@ -745,6 +746,7 @@ impl Engine {
         [khr_swapchain::NAME]
     }
 
+    #[deprecated(note = "Use swapchain.rs instead")]
     fn create_swapchain_and_images(
         vk_context: &VkContext,
         queue_families_indices: QueueFamiliesIndices,
@@ -794,7 +796,7 @@ impl Engine {
 
         let create_info = {
             let mut builder = SwapchainCreateInfoKHR::default()
-                .surface(vk_context.surface_khr())
+                .surface(vk_context.surface_khr)
                 .min_image_count(image_count)
                 .image_format(format.format)
                 .image_color_space(format.color_space)
@@ -827,6 +829,7 @@ impl Engine {
     /// Creates a VKImageView so that we can use VKImage in the render pipeline. Image Views
     /// describe how to access the image and which part of the images we can access. E.g. depth maps
     /// don't need to be mipmapped since it's just a single view of the entire screen.
+    #[deprecated(note = "merged with swapchain.rs")]
     fn create_swapchain_image_views(
         device: &Device,
         swapchain_images: &[Image],
@@ -1052,6 +1055,7 @@ impl Engine {
 
     /// Create the renderpass + multiple subpasses. Subpasses are rendering ops that rely on the
     /// previous framebuffer. Post processing fx are common subpasses.
+    #[deprecated(note = "See swapchain.rs")]
     fn create_render_pass(
         device: &Device,
         swapchain_properties: SwapchainProperties,

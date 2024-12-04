@@ -147,6 +147,7 @@ impl SwapchainSupportDetails {
     ///
     /// MAILBOX is like a queue & immediate mode. If the presentation queue is filled to the brim,
     /// then we just overwrite whatever is in queue.
+    #[deprecated]
     fn choose_swapchain_surface_present_mode(
         available_present_modes: &[PresentModeKHR],
     ) -> PresentModeKHR {
