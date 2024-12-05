@@ -1,7 +1,5 @@
-use std::error::Error;
-
 use ash::{
-    khr::{surface, swapchain::Device, swapchain as khr_swapchain},
+    khr::{surface, swapchain::Device as SwapchainDevice},
     vk::{
         AccessFlags, AttachmentDescription, AttachmentLoadOp, AttachmentReference,
         AttachmentStoreOp, ColorSpaceKHR, CompositeAlphaFlagsKHR, Extent2D, Format, Framebuffer,
@@ -11,11 +9,10 @@ use ash::{
         SubpassDependency, SubpassDescription, SurfaceCapabilitiesKHR, SurfaceFormatKHR,
         SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR, SUBPASS_EXTERNAL,
     },
+    Device as AshDevice,
 };
-use log::debug;
 
 use super::{context::VkContext, utils::QueueFamiliesIndices};
-use crate::common::{HEIGHT, WIDTH};
 
 #[derive(Clone, Copy, Debug)]
 pub struct SwapchainProperties {
@@ -24,16 +21,71 @@ pub struct SwapchainProperties {
     pub extent: Extent2D,
 }
 
-// NOTE: I really have no idea if this will work
-struct Swapchain {
-    loader: Device,
-    extent: Extent2D,
-    khr: SwapchainKHR,
-    images: Vec<Image>,
-    image_views: Vec<ImageView>,
-    render_pass: RenderPass,
-    framebuffers: Vec<Framebuffer>,
-    swapchain_properties: SwapchainProperties,
+impl SwapchainProperties {
+    pub fn aspect_ratio(&self) -> f32 {
+        self.extent.width as f32 / self.extent.height as f32
+    }
+}
+
+pub struct SwapchainWrapper {
+    pub loader: SwapchainDevice,
+    pub khr: SwapchainKHR,
+    pub images: Vec<Image>,
+    pub image_views: Vec<ImageView>,
+    pub render_pass: RenderPass,
+    pub framebuffers: Vec<Framebuffer>,
+    pub swapchain_properties: SwapchainProperties,
+}
+
+impl SwapchainWrapper {
+    pub fn new(
+        loader: SwapchainDevice,
+        khr: SwapchainKHR,
+        images: Vec<Image>,
+        image_views: Vec<ImageView>,
+        render_pass: RenderPass,
+        framebuffers: Vec<Framebuffer>,
+        swapchain_properties: SwapchainProperties,
+    ) -> Self {
+        SwapchainWrapper {
+            loader,
+            khr,
+            images,
+            image_views,
+            render_pass,
+            framebuffers,
+            swapchain_properties,
+        }
+    }
+
+    pub fn update_internal_resources(
+        &mut self,
+        loader: SwapchainDevice,
+        khr: SwapchainKHR,
+        swapchain_properties: SwapchainProperties,
+        images: Vec<Image>,
+        image_views: Vec<ImageView>,
+        render_pass: RenderPass,
+        framebuffers: Vec<Framebuffer>,
+    ) {
+        self.loader = loader;
+        self.khr = khr;
+        self.swapchain_properties = swapchain_properties;
+        self.images = images;
+        self.image_views = image_views;
+        self.render_pass = render_pass;
+        self.framebuffers = framebuffers;
+    }
+
+    pub fn release_swapchain_resources(&self, ash_device: &AshDevice) {
+        unsafe {
+            ash_device.destroy_render_pass(self.render_pass, None);
+            self.image_views.iter().for_each(|v| {
+                ash_device.destroy_image_view(*v, None);
+            });
+            self.loader.destroy_swapchain(self.khr, None);
+        }
+    }
 }
 
 pub struct SwapchainSupportDetails {
@@ -110,163 +162,8 @@ impl SwapchainSupportDetails {
     }
 }
 
-struct SwapchainSetup {
-    device: Device,
-    khr: SwapchainKHR,
-    extent: Extent2D,
-    format: Format,
-    images: Vec<Image>,
-    image_views: Vec<ImageView>,
-}
-
-impl Swapchain {
-    fn new(
-        vulkan_context: &VkContext,
-        queue_family_indices: QueueFamiliesIndices,
-    ) -> Result<Self, Box<dyn Error>> {
-        todo!()
-    }
-}
-
-fn create_vulkan_swapchain(
-    vulkan_context: &VkContext,
-    queue_families_index: QueueFamiliesIndices,
-) -> Result<SwapchainSetup, Box<dyn Error>> {
-    debug!("Creating vulkan swapchain");
-    let format = {
-        let formats = unsafe {
-            vulkan_context
-                .surface
-                .get_physical_device_surface_formats(
-                    vulkan_context.physical_device,
-                    vulkan_context.surface_khr,
-                )
-                .unwrap()
-        };
-
-        *formats
-            .iter()
-            .find(|format| {
-                format.format == Format::R8G8B8A8_SRGB
-                    && format.color_space == ColorSpaceKHR::SRGB_NONLINEAR
-            })
-            .unwrap_or(&formats[0])
-    };
-    debug!("Swapchain format: {format:?}");
-
-    let present_mode = {
-        let present_modes = unsafe {
-            vulkan_context
-                .surface
-                .get_physical_device_surface_present_modes(
-                    vulkan_context.physical_device,
-                    vulkan_context.surface_khr,
-                )
-                .unwrap()
-        };
-
-        // TODO: Check the priority of choosing a surface swapchain present mode
-        if present_modes.contains(&PresentModeKHR::MAILBOX) {
-            PresentModeKHR::MAILBOX
-        } else if present_modes.contains(&PresentModeKHR::FIFO) {
-            PresentModeKHR::FIFO
-        } else {
-            PresentModeKHR::IMMEDIATE
-        }
-    };
-
-    let capabilities = unsafe {
-        vulkan_context
-            .surface
-            .get_physical_device_surface_capabilities(
-                vulkan_context.physical_device,
-                vulkan_context.surface_khr,
-            )
-            .unwrap()
-    };
-
-    let extent = {
-        if capabilities.current_extent.width != u32::MAX {
-            capabilities.current_extent
-        } else {
-            let min = capabilities.min_image_extent;
-            let max = capabilities.max_image_extent;
-            let width = WIDTH.min(max.width).max(min.width);
-            let height = HEIGHT.min(max.height).max(min.height);
-            Extent2D { width, height }
-        }
-    };
-    debug!("Swapchain Extent: {extent:?}");
-
-    let image_count = capabilities.min_image_count;
-    debug!("Swapchain image count: {image_count:?}");
-
-    let families_indices = [
-        queue_families_index.graphics_index,
-        queue_families_index.present_index,
-    ];
-
-    let create_info = {
-        let mut builder = SwapchainCreateInfoKHR::default()
-            .surface(vulkan_context.surface_khr)
-            .min_image_count(image_count)
-            .image_format(format.format)
-            .image_color_space(format.color_space)
-            .image_extent(extent)
-            .image_array_layers(1)
-            .image_usage(ImageUsageFlags::COLOR_ATTACHMENT);
-
-        builder = if queue_families_index.graphics_index != queue_families_index.present_index {
-            builder
-                .image_sharing_mode(SharingMode::CONCURRENT)
-                .queue_family_indices(&families_indices)
-        } else {
-            builder.image_sharing_mode(SharingMode::EXCLUSIVE)
-        };
-
-        builder
-            .pre_transform(capabilities.current_transform)
-            .composite_alpha(CompositeAlphaFlagsKHR::OPAQUE)
-            .present_mode(present_mode)
-            .clipped(true)
-    };
-
-    let swapchain = Device::new(vulkan_context.instance_ref(), vulkan_context.device_ref());
-    let swapchain_khr = unsafe { swapchain.create_swapchain(&create_info, None).unwrap() };
-
-    let images = unsafe { swapchain.get_swapchain_images(swapchain_khr).unwrap() };
-    let views = images
-        .iter()
-        .map(|image| {
-            let create_info = ImageViewCreateInfo::default()
-                .image(*image)
-                .view_type(ImageViewType::TYPE_2D)
-                .format(format.format)
-                .subresource_range(ImageSubresourceRange {
-                    aspect_mask: ImageAspectFlags::COLOR,
-                    base_mip_level: 0,
-                    level_count: 1,
-                    base_array_layer: 0,
-                    layer_count: 1,
-                });
-
-            unsafe { vulkan_context.device.create_image_view(&create_info, None) }
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
-
-    Ok(SwapchainSetup {
-        device: swapchain,
-        khr: swapchain_khr,
-        extent,
-        format: format.format,
-        images,
-        image_views: views,
-    })
-}
-
 pub fn create_render_pass(
-    device: &ash::Device,
+    device: &AshDevice,
     swapchain_properties: SwapchainProperties,
     msaa_samples: SampleCountFlags,
     depth_format: Format,
@@ -357,7 +254,7 @@ pub fn create_render_pass(
 /// An abstraction of the internals of create_swapchain_image_views. All images are accessed
 /// view VkImageView.
 pub fn create_image_view(
-    device: &ash::Device,
+    device: &AshDevice,
     image: Image,
     mip_levels: u32,
     format: Format,
@@ -425,7 +322,7 @@ pub fn create_swapchain_and_images(
     queue_families_indices: QueueFamiliesIndices,
     dimensions: [u32; 2],
 ) -> (
-    khr_swapchain::Device,
+    SwapchainDevice,
     SwapchainKHR,
     SwapchainProperties,
     Vec<Image>,
@@ -492,7 +389,7 @@ pub fn create_swapchain_and_images(
             .clipped(true)
     };
 
-    let swapchain = khr_swapchain::Device::new(vk_context.instance_ref(), vk_context.device_ref());
+    let swapchain = SwapchainDevice::new(vk_context.instance_ref(), vk_context.device_ref());
     let swapchain_khr = unsafe { swapchain.create_swapchain(&create_info, None).unwrap() };
     let images = unsafe { swapchain.get_swapchain_images(swapchain_khr).unwrap() };
     (swapchain, swapchain_khr, properties, images)
@@ -502,7 +399,7 @@ pub fn create_swapchain_and_images(
 /// describe how to access the image and which part of the images we can access. E.g. depth maps
 /// don't need to be mipmapped since it's just a single view of the entire screen.
 pub fn create_swapchain_image_views(
-    device: &ash::Device,
+    device: &AshDevice,
     swapchain_images: &[Image],
     swapchain_properties: SwapchainProperties,
 ) -> Vec<ImageView> {

@@ -5,17 +5,17 @@ use crate::math::{select, FORWARD, UP};
 use array_util::{as_array, empty};
 use ash::{
     ext::debug_utils,
-    khr::surface as khr_surface,
+    khr::{surface as khr_surface, swapchain as khr_swapchain},
     util::Align,
     vk::{
-        self, AccessFlags, ApplicationInfo, BlendFactor, BlendOp, BorderColor, Buffer,
-        BufferCopy, BufferCreateInfo, BufferImageCopy, BufferMemoryBarrier, BufferUsageFlags,
-        ClearColorValue, ClearDepthStencilValue, ClearValue, ColorComponentFlags, CommandBuffer,
+        self, AccessFlags, ApplicationInfo, BlendFactor, BlendOp, BorderColor, Buffer, BufferCopy,
+        BufferCreateInfo, BufferImageCopy, BufferMemoryBarrier, BufferUsageFlags, ClearColorValue,
+        ClearDepthStencilValue, ClearValue, ColorComponentFlags, CommandBuffer,
         CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel,
         CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo,
-        CompareOp, CullModeFlags, DependencyFlags, DescriptorBufferInfo,
-        DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize,
-        DescriptorSet, DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding,
+        CompareOp, CullModeFlags, DependencyFlags, DescriptorBufferInfo, DescriptorImageInfo,
+        DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize, DescriptorSet,
+        DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding,
         DescriptorSetLayoutCreateInfo, DescriptorType, DeviceCreateInfo, DeviceMemory,
         DeviceQueueCreateInfo, DeviceSize, Extent2D, Extent3D, Fence, FenceCreateFlags,
         FenceCreateInfo, Filter, Format, FormatFeatureFlags, Framebuffer, FramebufferCreateInfo,
@@ -32,9 +32,9 @@ use ash::{
         PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags,
         PipelineVertexInputStateCreateInfo, PipelineViewportStateCreateInfo, PolygonMode,
         PresentInfoKHR, PrimitiveTopology, Queue, Rect2D, RenderPass, RenderPassBeginInfo,
-        SampleCountFlags, SamplerAddressMode, SamplerCreateInfo,
-        SamplerMipmapMode, SemaphoreCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo,
-        SubpassContents, Viewport, WriteDescriptorSet, QUEUE_FAMILY_IGNORED,
+        SampleCountFlags, SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode,
+        SemaphoreCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo, SubpassContents, Viewport,
+        WriteDescriptorSet, QUEUE_FAMILY_IGNORED,
     },
     Device, Entry, Instance,
 };
@@ -42,13 +42,16 @@ use nalgebra::{Point3, Unit};
 use nalgebra_glm::{Mat4, Vec2, Vec3, Vec4};
 use physical_devices::pick_physical_device;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
-use swapchain::{create_render_pass, create_swapchain_and_images, create_swapchain_image_views, SwapchainProperties};
 use std::{
     ffi::{CStr, CString},
     mem::{align_of, size_of},
     panic,
     path::Path,
     time::Instant,
+};
+use swapchain_wrapper::{
+    create_render_pass, create_swapchain_and_images, create_swapchain_image_views,
+    SwapchainProperties, SwapchainWrapper,
 };
 use winit::window::Window;
 
@@ -62,7 +65,7 @@ pub mod physical_devices;
 pub mod render;
 pub mod shader_utils;
 pub mod shapes;
-pub mod swapchain;
+pub mod swapchain_wrapper;
 pub mod texture;
 pub mod uniform_buffer_object;
 pub mod utils;
@@ -74,10 +77,10 @@ use debug::{
 };
 use utils::QueueFamiliesIndices;
 
+use self::shader_utils::create_shader_module;
 use self::texture::Texture;
 use self::uniform_buffer_object::UniformBufferObject;
 use self::utils::{InFlightFrames, SyncObjects};
-use self::shader_utils::create_shader_module;
 use crate::{common::HEIGHT, WIDTH};
 
 pub struct Engine {
@@ -89,7 +92,6 @@ pub struct Engine {
     descriptor_pool: DescriptorPool,
     descriptor_sets: Vec<DescriptorSet>,
     pub graphics_queue: Queue,
-    // images: Vec<Image>, // TODO: Move to a swapchain struct
     in_flight_frames: InFlightFrames,
     index_buffer: Buffer,
     index_buffer_memory: DeviceMemory,
@@ -97,14 +99,9 @@ pub struct Engine {
     pipeline_layout: PipelineLayout,
     present_queue: Queue,
     queue_families_indices: QueueFamiliesIndices,
-    // render_pass: RenderPass, // TODO: Move to a swapchain struct
     resize_dimensions: Option<[u32; 2]>,
     _start_instant: Instant,
-    // swapchain: khr_swapchain::Device, // TODO: Move to a swapchain struct
-    // swapchain_framebuffers: Vec<Framebuffer>, // TODO: Move to a swapchain struct
-    // swapchain_image_views: Vec<ImageView>, // TODO: Move to a swapchain struct
-    // swapchain_khr: SwapchainKHR,      // TODO: Move to a swapchain struct
-    swapchain_properties: SwapchainProperties,
+    swapchain: SwapchainWrapper,
     transient_command_pool: CommandPool,
     msaa_samples: SampleCountFlags,
     depth_format: Format,
@@ -158,7 +155,7 @@ impl Engine {
         );
 
         let dimensions = [WIDTH, HEIGHT];
-        
+
         let (swapchain, swapchain_khr, properties, images) =
             create_swapchain_and_images(&vk_context, queue_families_indices, dimensions);
 
@@ -236,6 +233,8 @@ impl Engine {
         // mesh_builder.push_sphere(0.5, 50);
         // let (vertices, indices) = (mesh_builder.vertices, mesh_builder.indices);
 
+        // TODO: Move this from the constructor to the update loop. We need to create new uniform
+        // buffers and descriptor sets in frame.
         let (vertices, indices) = Self::load_model();
         let (vertex_buffer, vertex_buffer_memory) = Self::create_vertex_buffer(
             &vk_context,
@@ -279,6 +278,16 @@ impl Engine {
 
         let in_flight_frames = Self::create_sync_objects(vk_context.device_ref());
 
+        let swapchain_union = SwapchainWrapper::new(
+            swapchain,
+            swapchain_khr,
+            images,
+            swapchain_image_views,
+            render_pass,
+            swapchain_framebuffers,
+            properties,
+        );
+
         Self {
             dirty_swapchain: false,
             // mouse_inputs: MouseInputs::new(),
@@ -290,7 +299,7 @@ impl Engine {
             present_queue,
             // swapchain,
             // swapchain_khr,
-            swapchain_properties: properties,
+            // swapchain_properties: properties,
             // images,
             // swapchain_image_views,
             // render_pass,
@@ -298,6 +307,7 @@ impl Engine {
             pipeline_layout: layout,
             pipeline,
             // swapchain_framebuffers,
+            swapchain: swapchain_union,
             command_pool,
             transient_command_pool,
             msaa_samples,
@@ -369,9 +379,10 @@ impl Engine {
                 .unwrap()
         };
 
+        // TODO: Write a wrapper for acquiring the next image
         let result = unsafe {
-            self.swapchain.acquire_next_image(
-                self.swapchain_khr,
+            self.swapchain.loader.acquire_next_image(
+                self.swapchain.khr,
                 u64::MAX,
                 image_available_semaphore,
                 Fence::null(),
@@ -416,7 +427,7 @@ impl Engine {
             };
         }
 
-        let swapchains = [self.swapchain_khr];
+        let swapchains = [self.swapchain.khr];
         let images_indices = [image_index];
 
         {
@@ -428,6 +439,7 @@ impl Engine {
 
             let result = unsafe {
                 self.swapchain
+                    .loader
                     .queue_present(self.present_queue, &present_info)
             };
             match result {
@@ -449,17 +461,14 @@ impl Engine {
         unsafe {
             self.depth_texture.destroy(device);
             self.color_texture.destroy(device);
-            self.swapchain_framebuffers
+            self.swapchain
+                .framebuffers
                 .iter()
                 .for_each(|f| device.destroy_framebuffer(*f, None));
             device.free_command_buffers(self.command_pool, &self.command_buffers);
             device.destroy_pipeline(self.pipeline, None);
             device.destroy_pipeline_layout(self.pipeline_layout, None);
-            device.destroy_render_pass(self.render_pass, None);
-            self.swapchain_image_views
-                .iter()
-                .for_each(|v| device.destroy_image_view(*v, None));
-            self.swapchain.destroy_swapchain(self.swapchain_khr, None);
+            self.swapchain.release_swapchain_resources(device);
         }
     }
 
@@ -558,9 +567,6 @@ impl Engine {
         // let elapsed = elapsed.as_secs() as f32 + (elapsed.subsec_millis() as f32) / 1000.0;
         let elapsed = 0.0;
 
-        let aspect = self.swapchain_properties.extent.width as f32
-            / self.swapchain_properties.extent.height as f32;
-
         let axis = Unit::new_normalize(UP);
         let model = Mat4::from_axis_angle(&axis, elapsed * 0.1667);
 
@@ -570,7 +576,12 @@ impl Engine {
         let ubo = UniformBufferObject {
             model,
             view: Mat4::look_at_rh(&eye, &origin, &FORWARD),
-            proj: nalgebra_glm::perspective_rh(aspect, 60.0_f32.to_radians(), 0.1, 10.0),
+            proj: nalgebra_glm::perspective_rh(
+                self.swapchain.swapchain_properties.aspect_ratio(),
+                60.0_f32.to_radians(),
+                0.1,
+                10.0,
+            ),
         };
 
         let ubos = [ubo];
@@ -605,20 +616,17 @@ impl Engine {
         self.cleanup_swapchain();
 
         let device = self.vk_context.device_ref();
-        let dimensions = self.resize_dimensions.unwrap_or([
-            self.swapchain_properties.extent.width,
-            self.swapchain_properties.extent.height,
-        ]);
+        let extent = self.swapchain.swapchain_properties.extent;
+        let dimensions = self
+            .resize_dimensions
+            .unwrap_or([extent.width, extent.height]);
 
-        let (swapchain, swapchain_khr, properties, images) = Self::create_swapchain_and_images(
-            &self.vk_context,
-            self.queue_families_indices,
-            dimensions,
-        );
-        let swapchain_image_views = Self::create_swapchain_image_views(device, &images, properties);
+        let (swapchain, swapchain_khr, properties, images) =
+            create_swapchain_and_images(&self.vk_context, self.queue_families_indices, dimensions);
+        let swapchain_image_views = create_swapchain_image_views(device, &images, properties);
 
         let render_pass =
-            Self::create_render_pass(device, properties, self.msaa_samples, self.depth_format);
+            create_render_pass(device, properties, self.msaa_samples, self.depth_format);
         let (pipeline, layout) = Self::create_pipeline(
             device,
             properties,
@@ -667,9 +675,19 @@ impl Engine {
             pipeline,
         );
 
+        self.swapchain.update_internal_resources(
+            swapchain,
+            swapchain_khr,
+            properties,
+            images,
+            swapchain_image_views,
+            render_pass,
+            swapchain_framebuffers,
+        );
+
         // self.swapchain = swapchain;
         // self.swapchain_khr = swapchain_khr;
-        self.swapchain_properties = properties;
+        // self.swapchain_properties = properties;
         // self.images = images;
         // self.swapchain_image_views = swapchain_image_views;
         // self.render_pass = render_pass;
@@ -744,29 +762,6 @@ impl Engine {
     #[cfg(not(any(target_os = "macos", target_os = "ios")))]
     fn get_required_device_extensions() -> [&'static CStr; 1] {
         [khr_swapchain::NAME]
-    }
-
-    /// Creates a VKImageView so that we can use VKImage in the render pipeline. Image Views
-    /// describe how to access the image and which part of the images we can access. E.g. depth maps
-    /// don't need to be mipmapped since it's just a single view of the entire screen.
-    #[deprecated(note = "merged with swapchain.rs")]
-    fn create_swapchain_image_views(
-        device: &Device,
-        swapchain_images: &[Image],
-        swapchain_properties: SwapchainProperties,
-    ) -> Vec<ImageView> {
-        swapchain_images
-            .iter()
-            .map(|image| {
-                Self::create_image_view(
-                    device,
-                    *image,
-                    1,
-                    swapchain_properties.format.format,
-                    ImageAspectFlags::COLOR,
-                )
-            })
-            .collect::<Vec<ImageView>>()
     }
 
     /// An abstraction of the internals of create_swapchain_image_views. All images are accessed
