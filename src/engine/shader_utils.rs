@@ -16,3 +16,4 @@ pub fn create_shader_module(device: &Device, code: &[u32]) -> ShaderModule {
     let create_info = ShaderModuleCreateInfo::default().code(code);
     unsafe { device.create_shader_module(&create_info, None).unwrap() }
 }
+

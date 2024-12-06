@@ -1,15 +1,16 @@
 pub(crate) use crate::common::MAX_FRAMES_IN_FLIGHT;
 use crate::engine::{render::Vertex, shader_utils::read_shader_from_file};
 use crate::math::{select, FORWARD, UP};
+use crate::to_array;
 
 use array_util::{as_array, empty};
 use ash::{
     ext::debug_utils,
-    khr::{surface as khr_surface, swapchain as khr_swapchain},
     util::Align,
+    khr::{surface as khr_surface, swapchain as khr_swapchain},
     vk::{
-        self, AccessFlags, ApplicationInfo, BlendFactor, BlendOp, BorderColor, Buffer, BufferCopy,
-        BufferCreateInfo, BufferImageCopy, BufferMemoryBarrier, BufferUsageFlags, ClearColorValue,
+        self, AccessFlags, ApplicationInfo, BlendFactor, BlendOp, BorderColor, Buffer,
+        BufferImageCopy, BufferMemoryBarrier, BufferUsageFlags, ClearColorValue,
         ClearDepthStencilValue, ClearValue, ColorComponentFlags, CommandBuffer,
         CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel,
         CommandBufferUsageFlags, CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo,
@@ -36,8 +37,9 @@ use ash::{
         SemaphoreCreateInfo, ShaderStageFlags, SharingMode, SubmitInfo, SubpassContents, Viewport,
         WriteDescriptorSet, QUEUE_FAMILY_IGNORED,
     },
-    Device, Entry, Instance,
+    Device as AshDevice, Entry, Instance,
 };
+use memory::{copy_buffer, create_buffer, create_device_local_buffer_with_data, execute_one_time_commands};
 use nalgebra::{Point3, Unit};
 use nalgebra_glm::{Mat4, Vec2, Vec3, Vec4};
 use physical_devices::pick_physical_device;
@@ -60,9 +62,11 @@ pub mod camera;
 pub mod context;
 pub mod debug;
 pub mod inputs;
+pub mod memory;
 pub mod mesh_builder;
 pub mod physical_devices;
 pub mod render;
+pub mod render_params;
 pub mod shader_utils;
 pub mod shapes;
 pub mod swapchain_wrapper;
@@ -93,10 +97,10 @@ pub struct Engine {
     descriptor_sets: Vec<DescriptorSet>,
     pub graphics_queue: Queue,
     in_flight_frames: InFlightFrames,
-    index_buffer: Buffer,
-    index_buffer_memory: DeviceMemory,
-    pipeline: Pipeline,
-    pipeline_layout: PipelineLayout,
+    index_buffer: Buffer,              // TODO: Move to render params?
+    index_buffer_memory: DeviceMemory, // TODO: Move to render params?
+    pipeline: Pipeline,                // TODO: Move this a render pipeline struct
+    pipeline_layout: PipelineLayout,   // Move this to a render pipeline wrapper
     present_queue: Queue,
     queue_families_indices: QueueFamiliesIndices,
     resize_dimensions: Option<[u32; 2]>,
@@ -111,8 +115,8 @@ pub struct Engine {
     model_index_count: usize,
     uniform_buffers: Vec<Buffer>,
     uniform_buffer_memories: Vec<DeviceMemory>,
-    vertex_buffer: Buffer,
-    vertex_buffer_memory: DeviceMemory,
+    vertex_buffer: Buffer,              // TODO: Move to render params
+    vertex_buffer_memory: DeviceMemory, // TODO: Move to render params
     pub vk_context: VkContext,
 }
 
@@ -474,7 +478,7 @@ impl Engine {
 
     /// Descriptor set layouts can only be created in a pool like a command buffer.
     /// The pool size needs to accomodate the image sampler and the uniform buffer.
-    fn create_descriptor_pool(device: &Device, size: u32) -> DescriptorPool {
+    fn create_descriptor_pool(device: &AshDevice, size: u32) -> DescriptorPool {
         let ubo_pool_size = DescriptorPoolSize {
             ty: DescriptorType::UNIFORM_BUFFER,
             descriptor_count: size,
@@ -507,7 +511,7 @@ impl Engine {
     /// - 2. Material Resources
     /// - 3. Per Object Resources
     fn create_descriptor_sets(
-        device: &Device,
+        device: &AshDevice,
         pool: DescriptorPool,
         layout: DescriptorSetLayout,
         uniform_buffers: &[Buffer],
@@ -627,6 +631,7 @@ impl Engine {
 
         let render_pass =
             create_render_pass(device, properties, self.msaa_samples, self.depth_format);
+
         let (pipeline, layout) = Self::create_pipeline(
             device,
             properties,
@@ -710,7 +715,7 @@ impl Engine {
         instance: &Instance,
         device: PhysicalDevice,
         queue_families_indices: QueueFamiliesIndices,
-    ) -> (Device, Queue, Queue) {
+    ) -> (AshDevice, Queue, Queue) {
         let graphics_family_index = queue_families_indices.graphics_index;
         let present_family_index = queue_families_indices.present_index;
         let queue_priorities: [f32; 1] = [1.0f32];
@@ -767,7 +772,7 @@ impl Engine {
     /// An abstraction of the internals of create_swapchain_image_views. All images are accessed
     /// view VkImageView.
     fn create_image_view(
-        device: &Device,
+        device: &AshDevice,
         image: Image,
         mip_levels: u32,
         format: Format,
@@ -792,7 +797,7 @@ impl Engine {
     /// the shader has enough information.
     ///
     /// A common example is binding 2 buffers and an image to the mesh.
-    fn create_descriptor_set_layout(device: &Device) -> DescriptorSetLayout {
+    fn create_descriptor_set_layout(device: &AshDevice) -> DescriptorSetLayout {
         let ubo_binding = UniformBufferObject::get_descriptor_set_layout_binding();
         let sampler_binding = DescriptorSetLayoutBinding::default()
             .binding(1)
@@ -810,7 +815,7 @@ impl Engine {
     }
 
     fn create_pipeline(
-        device: &Device,
+        device: &AshDevice,
         swapchain_properties: SwapchainProperties,
         msaa_samples: SampleCountFlags,
         render_pass: RenderPass,
@@ -819,6 +824,7 @@ impl Engine {
         let current_dir = std::env::current_dir().unwrap();
         log::info!("Current directory: {:?}", current_dir);
 
+        // TODO: Create a method that loads a shader
         let vert_path = current_dir.join("assets/shaders/unlit-vert.spv");
         let vert_source = read_shader_from_file(vert_path);
         let frag_path = current_dir.join("assets/shaders/unlit-frag.spv");
@@ -839,9 +845,9 @@ impl Engine {
             .module(fragment_shader_module)
             .name(&frag_entry_point);
 
-        let shader_states_info = [vertex_shader_state_info, fragment_shader_state_info];
+        let shader_states_info = to_array!(vertex_shader_state_info, fragment_shader_state_info);
 
-        let vertex_binding_descs = [Vertex::get_binding_description()];
+        let vertex_binding_descs = to_array!(Vertex::get_binding_description());
         let vertex_attribute_descs = Vertex::get_attribute_descriptions();
 
         // Describes the layout of the vertex data.
@@ -867,12 +873,12 @@ impl Engine {
             max_depth: 1.0,
         };
 
-        let viewports = [viewport];
+        let viewports = to_array!(viewport);
         let scissor = Rect2D {
             offset: Offset2D { x: 0, y: 0 },
             extent: swapchain_properties.extent,
         };
-        let scissors = [scissor];
+        let scissors = to_array!(scissor);
 
         let viewport_info = PipelineViewportStateCreateInfo::default()
             .viewports(&viewports)
@@ -934,7 +940,7 @@ impl Engine {
             .blend_constants([0.0, 0.0, 0.0, 0.0]);
 
         let layout = {
-            let layouts = [descriptor_set_layout];
+            let layouts = to_array!(descriptor_set_layout);
             let layout_info = PipelineLayoutCreateInfo::default().set_layouts(&layouts);
 
             unsafe { device.create_pipeline_layout(&layout_info, None).unwrap() }
@@ -952,7 +958,7 @@ impl Engine {
             .layout(layout)
             .render_pass(render_pass)
             .subpass(0);
-        let pipeline_infos = [pipeline_info];
+        let pipeline_infos = to_array!(pipeline_info);
 
         let pipeline = unsafe {
             device
@@ -972,7 +978,7 @@ impl Engine {
     /// Framebuffers have to be bound to a renderpass. So whatever properties that are defined in
     /// the renderpass should be the same properties defined for the frame buffer.
     fn create_framebuffers(
-        device: &Device,
+        device: &AshDevice,
         image_views: &[ImageView],
         color_texture: Texture,
         depth_texture: Texture,
@@ -1014,7 +1020,7 @@ impl Engine {
         let image_size = (pixels.len() * size_of::<u8>()) as DeviceSize;
         let device = vk_context.device_ref();
 
-        let (buffer, memory, mem_size) = Self::create_buffer(
+        let (buffer, memory, mem_size) = create_buffer(
             vk_context,
             image_size,
             BufferUsageFlags::TRANSFER_SRC,
@@ -1180,7 +1186,7 @@ impl Engine {
     }
 
     fn transition_image_layout(
-        device: &Device,
+        device: &AshDevice,
         command_pool: CommandPool,
         transition_queue: Queue,
         image: Image,
@@ -1189,7 +1195,7 @@ impl Engine {
         old_layout: ImageLayout,
         new_layout: ImageLayout,
     ) {
-        Self::execute_one_time_commands(device, command_pool, transition_queue, |buffer| {
+        execute_one_time_commands(device, command_pool, transition_queue, |buffer| {
             let (src_access_mask, dst_access_mask, src_stage, dst_stage) =
                 match (old_layout, new_layout) {
                     (vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL) => (
@@ -1272,14 +1278,14 @@ impl Engine {
     }
 
     fn copy_buffer_to_image(
-        device: &Device,
+        device: &AshDevice,
         command_pool: CommandPool,
         transition_queue: Queue,
         buffer: Buffer,
         image: Image,
         extent: Extent2D,
     ) {
-        Self::execute_one_time_commands(device, command_pool, transition_queue, |command_buffer| {
+        execute_one_time_commands(device, command_pool, transition_queue, |command_buffer| {
             let region = BufferImageCopy::default()
                 .buffer_offset(0) // Where does the pixel data actually start?
                 .buffer_row_length(0)
@@ -1332,7 +1338,7 @@ impl Engine {
             panic!("Linear blitting is not supported for format {:?}.", format);
         }
 
-        Self::execute_one_time_commands(
+        execute_one_time_commands(
             vk_context.device_ref(),
             command_pool,
             transfer_queue,
@@ -1464,13 +1470,14 @@ impl Engine {
         );
     }
 
+    #[deprecated]
     fn create_vertex_buffer(
         vk_context: &VkContext,
         command_pool: CommandPool,
         transfer_queue: Queue,
         vertices: &[Vertex],
     ) -> (Buffer, DeviceMemory) {
-        Self::create_device_local_buffer_with_data::<u32, _>(
+        create_device_local_buffer_with_data::<u32, _>(
             vk_context,
             command_pool,
             transfer_queue,
@@ -1479,70 +1486,20 @@ impl Engine {
         )
     }
 
+    #[deprecated]
     fn create_index_buffer(
         vk_context: &VkContext,
         command_pool: CommandPool,
         transfer_queue: Queue,
         indices: &[u32],
     ) -> (Buffer, DeviceMemory) {
-        Self::create_device_local_buffer_with_data::<u32, _>(
+        create_device_local_buffer_with_data::<u32, _>(
             vk_context,
             command_pool,
             transfer_queue,
             BufferUsageFlags::INDEX_BUFFER,
             indices,
         )
-    }
-
-    fn create_device_local_buffer_with_data<A, T: Copy>(
-        vk_context: &VkContext,
-        command_pool: CommandPool,
-        transfer_queue: Queue,
-        usage: BufferUsageFlags,
-        data: &[T],
-    ) -> (Buffer, DeviceMemory) {
-        let size = size_of_val(data) as DeviceSize;
-
-        let (staging_buffer, staging_memory, staging_mem_size) = Self::create_buffer(
-            vk_context,
-            size,
-            BufferUsageFlags::TRANSFER_SRC,
-            MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
-        );
-
-        unsafe {
-            let data_ptr = vk_context
-                .device_ref()
-                .map_memory(staging_memory, 0, size, MemoryMapFlags::empty())
-                .unwrap();
-            let mut align = Align::new(data_ptr, align_of::<A>() as _, staging_mem_size);
-            align.copy_from_slice(data);
-            vk_context.device_ref().unmap_memory(staging_memory);
-        };
-
-        let (buffer, memory, _) = Self::create_buffer(
-            vk_context,
-            size,
-            BufferUsageFlags::TRANSFER_DST | usage,
-            MemoryPropertyFlags::DEVICE_LOCAL,
-        );
-
-        // Copy from staging -> buffer - this will hold the Vertex data
-        Self::copy_buffer(
-            vk_context.device_ref(),
-            command_pool,
-            transfer_queue,
-            staging_buffer,
-            buffer,
-            size,
-        );
-
-        // Clean up the staging buffer b/c we've already copied the data!
-        unsafe {
-            vk_context.device_ref().destroy_buffer(staging_buffer, None);
-            vk_context.device_ref().free_memory(staging_memory, None);
-        };
-        (buffer, memory)
     }
 
     fn create_uniform_buffers(
@@ -1554,7 +1511,7 @@ impl Engine {
         let mut memories = Vec::new();
 
         for _ in 0..count {
-            let (buffer, memory, _) = Self::create_buffer(
+            let (buffer, memory, _) = create_buffer(
                 vk_context,
                 size,
                 BufferUsageFlags::UNIFORM_BUFFER,
@@ -1565,138 +1522,6 @@ impl Engine {
         }
 
         (buffers, memories)
-    }
-
-    /// Copies the size first bytes of src into dst
-    ///
-    /// Allocates a command buffer allocated from the 'command_pool'. The command buffer is
-    /// submitted to the transfer_queue.
-    fn copy_buffer(
-        device: &Device,
-        command_pool: CommandPool,
-        transfer_queue: Queue,
-        src: Buffer,
-        dst: Buffer,
-        size: DeviceSize,
-    ) {
-        Self::execute_one_time_commands(device, command_pool, transfer_queue, |buffer| {
-            let region = BufferCopy {
-                src_offset: 0,
-                dst_offset: 0,
-                size,
-            };
-            let regions = [region];
-
-            unsafe { device.cmd_copy_buffer(buffer, src, dst, &regions) };
-        });
-    }
-
-    /// A one time executor that takes in a lambda to execute. This can be used in multiple
-    /// places such as copying a buffer.
-    fn execute_one_time_commands<T: FnOnce(CommandBuffer)>(
-        device: &Device,
-        command_pool: CommandPool,
-        queue: Queue,
-        executor: T,
-    ) {
-        let command_buffer = {
-            let alloc_info = CommandBufferAllocateInfo::default()
-                .level(CommandBufferLevel::PRIMARY)
-                .command_pool(command_pool)
-                .command_buffer_count(1);
-
-            unsafe { device.allocate_command_buffers(&alloc_info).unwrap()[0] }
-        };
-
-        let command_buffers = [command_buffer];
-
-        // Begin recording
-        {
-            let begin_info =
-                CommandBufferBeginInfo::default().flags(CommandBufferUsageFlags::ONE_TIME_SUBMIT);
-
-            unsafe {
-                device
-                    .begin_command_buffer(command_buffer, &begin_info)
-                    .unwrap();
-            }
-        }
-
-        // Execute command (pretty much a delegate)
-        executor(command_buffer);
-
-        unsafe { device.end_command_buffer(command_buffer).unwrap() };
-
-        {
-            let submit_info = SubmitInfo::default().command_buffers(&command_buffers);
-
-            let submit_infos = [submit_info];
-
-            unsafe {
-                device
-                    .queue_submit(queue, &submit_infos, Fence::null())
-                    .unwrap();
-                device.queue_wait_idle(queue).unwrap();
-            }
-        }
-
-        unsafe { device.free_command_buffers(command_pool, &command_buffers) };
-    }
-
-    /// Creates a buffer and allocates the memory required.
-    /// # Returns
-    /// The buffer, its memory and the actual size in bytes of the allocated memory since it may
-    /// be different from the requested size.
-    fn create_buffer(
-        vk_context: &VkContext,
-        size: DeviceSize,
-        usage: BufferUsageFlags,
-        mem_properties: MemoryPropertyFlags,
-    ) -> (Buffer, DeviceMemory, DeviceSize) {
-        let buffer = {
-            let buffer_info = BufferCreateInfo::default()
-                .size(size)
-                .usage(usage)
-                .sharing_mode(SharingMode::EXCLUSIVE);
-
-            unsafe {
-                vk_context
-                    .device_ref()
-                    .create_buffer(&buffer_info, None)
-                    .unwrap()
-            }
-        };
-
-        let mem_requirements = unsafe {
-            vk_context
-                .device_ref()
-                .get_buffer_memory_requirements(buffer)
-        };
-        let memory = {
-            let mem_type = Self::find_memory_type(
-                mem_requirements,
-                vk_context.get_mem_properties(),
-                mem_properties,
-            );
-            let alloc_info = MemoryAllocateInfo::default()
-                .allocation_size(mem_requirements.size)
-                .memory_type_index(mem_type);
-
-            unsafe {
-                vk_context
-                    .device_ref()
-                    .allocate_memory(&alloc_info, None)
-                    .unwrap()
-            }
-        };
-
-        unsafe {
-            vk_context
-                .device_ref()
-                .bind_buffer_memory(buffer, memory, 0)
-                .unwrap()
-        }
-        (buffer, memory, mem_requirements.size)
     }
 
     fn find_depth_format(instance: &Instance, device: PhysicalDevice) -> Format {
@@ -1744,6 +1569,7 @@ impl Engine {
     ///
     /// # Returns
     /// The index of the memory type from mem_properties.
+    #[deprecated]
     fn find_memory_type(
         requirements: MemoryRequirements,
         mem_properties: PhysicalDeviceMemoryProperties,
@@ -1805,7 +1631,7 @@ impl Engine {
     /// We need a command pool which stores all command buffers. Manage some unmanaged memory
     /// cause never trust the idiot behind the screen to program something :)
     fn create_command_pool(
-        device: &Device,
+        device: &AshDevice,
         queue_families_indices: QueueFamiliesIndices,
         create_flags: CommandPoolCreateFlags,
     ) -> CommandPool {
@@ -1820,8 +1646,17 @@ impl Engine {
         }
     }
 
+    fn create_and_register_command_buffers1(
+        device: &AshDevice,
+        pool: CommandPool,
+        framebuffers: &[Framebuffer],
+        swapchain_wrapper: &SwapchainWrapper,
+    ) {
+    }
+
+    #[deprecated]
     fn create_and_register_command_buffers(
-        device: &Device,
+        device: &AshDevice,
         pool: CommandPool,
         framebuffers: &[Framebuffer],
         render_pass: RenderPass,
@@ -1928,7 +1763,7 @@ impl Engine {
         buffers
     }
 
-    fn create_sync_objects(device: &Device) -> InFlightFrames {
+    fn create_sync_objects(device: &AshDevice) -> InFlightFrames {
         let mut sync_objects_vec: Vec<SyncObjects> =
             Vec::with_capacity(MAX_FRAMES_IN_FLIGHT as usize);
 
@@ -1998,6 +1833,7 @@ impl Engine {
         Texture::new(image, mem, view, None)
     }
 
+    // TODO: Move to an asset pipeline mod
     fn load_model() -> (Vec<Vertex>, Vec<u32>) {
         let path = Path::new("assets/models/viking_room.obj");
         log::info!("Loading model...{p}", p = path.to_str().unwrap());
