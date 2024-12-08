@@ -6,7 +6,6 @@ use crate::to_array;
 use array_util::{as_array, empty};
 use ash::{
     ext::debug_utils,
-    util::Align,
     khr::{surface as khr_surface, swapchain as khr_swapchain},
     vk::{
         self, AccessFlags, ApplicationInfo, BlendFactor, BlendOp, BorderColor, Buffer,
@@ -39,7 +38,7 @@ use ash::{
     },
     Device as AshDevice, Entry, Instance,
 };
-use memory::{copy_buffer, create_buffer, create_device_local_buffer_with_data, execute_one_time_commands};
+use memory::{create_buffer, create_device_local_buffer_with_data, execute_one_time_commands};
 use nalgebra::{Point3, Unit};
 use nalgebra_glm::{Mat4, Vec2, Vec3, Vec4};
 use physical_devices::pick_physical_device;

@@ -1,7 +1,7 @@
 mod common;
+mod engine;
 mod helpers;
 mod math;
-mod engine;
 mod ui;
 
 use chrono::Local;
@@ -39,7 +39,7 @@ fn init_logger(target: Target) {
 }
 
 fn main() {
-    let target = Box::new(File::create("geometroid.log").expect("Can't create file!"));
+    let target = Box::new(File::create("player.log").expect("Can't create file!"));
     init_logger(Target::Pipe(target));
 
     let event_loop = EventLoop::new().unwrap();

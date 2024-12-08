@@ -4,13 +4,14 @@ use crate::{engine::Engine, App};
 
 mod image;
 
+#[allow(dead_code)]
 pub trait ImGuiSystem {
     fn initialize_engine_ui(engine: &mut Engine);
     fn build_ui(&mut self, ctx: Context);
 }
 
 impl ImGuiSystem for App {
-    fn initialize_engine_ui(engine: &mut Engine) {
+    fn initialize_engine_ui(_: &mut Engine) {
         todo!()
     }
 
