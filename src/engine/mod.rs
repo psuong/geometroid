@@ -4,6 +4,8 @@ use crate::math::{select, FORWARD, UP};
 use crate::to_array;
 
 use array_util::{as_array, empty};
+use ash::util::Align;
+use ash::vk::Handle;
 use ash::{
     ext::debug_utils,
     khr::{surface as khr_surface, swapchain as khr_swapchain},
@@ -38,7 +40,7 @@ use ash::{
     },
     Device as AshDevice, Entry, Instance,
 };
-use memory::{create_buffer, create_device_local_buffer_with_data, execute_one_time_commands};
+use memory::{create_buffer, execute_one_time_commands};
 use nalgebra::{Point3, Unit};
 use nalgebra_glm::{Mat4, Vec2, Vec3, Vec4};
 use physical_devices::pick_physical_device;
@@ -106,7 +108,7 @@ pub struct Engine {
     queue_families_indices: QueueFamiliesIndices,
     resize_dimensions: Option<[u32; 2]>,
     _start_instant: Instant,
-    swapchain: SwapchainWrapper,
+    swapchain_wrapper: SwapchainWrapper,
     transient_command_pool: CommandPool,
     msaa_samples: SampleCountFlags,
     depth_format: Format,
@@ -295,20 +297,6 @@ impl Engine {
             pipeline,
         );
 
-        // let command_buffers = Self::create_and_register_command_buffers(
-        //     vk_context.device_ref(),
-        //     command_pool,
-        //     &swapchain_framebuffers,
-        //     render_pass,
-        //     properties,
-        //     vertex_buffer,
-        //     index_buffer,
-        //     indices.len(),
-        //     layout,
-        //     &descriptor_sets,
-        //     pipeline,
-        // );
-
         let in_flight_frames = Self::create_sync_objects(vk_context.device_ref());
 
         Self {
@@ -330,7 +318,7 @@ impl Engine {
             pipeline_layout: layout,
             pipeline,
             // swapchain_framebuffers,
-            swapchain: swapchain_wrapper,
+            swapchain_wrapper,
             command_pool,
             transient_command_pool,
             msaa_samples,
@@ -405,8 +393,8 @@ impl Engine {
 
         // TODO: Write a wrapper for acquiring the next image
         let result = unsafe {
-            self.swapchain.loader.acquire_next_image(
-                self.swapchain.khr,
+            self.swapchain_wrapper.loader.acquire_next_image(
+                self.swapchain_wrapper.khr,
                 u64::MAX,
                 image_available_semaphore,
                 Fence::null(),
@@ -451,7 +439,7 @@ impl Engine {
             };
         }
 
-        let swapchains = [self.swapchain.khr];
+        let swapchains = [self.swapchain_wrapper.khr];
         let images_indices = [image_index];
 
         {
@@ -462,7 +450,7 @@ impl Engine {
             // .results() null since we only have one swapchain
 
             let result = unsafe {
-                self.swapchain
+                self.swapchain_wrapper
                     .loader
                     .queue_present(self.present_queue, &present_info)
             };
@@ -485,14 +473,14 @@ impl Engine {
         unsafe {
             self.depth_texture.destroy(device);
             self.color_texture.destroy(device);
-            self.swapchain
+            self.swapchain_wrapper
                 .framebuffers
                 .iter()
                 .for_each(|f| device.destroy_framebuffer(*f, None));
             device.free_command_buffers(self.command_pool, &self.command_buffers);
             device.destroy_pipeline(self.pipeline, None);
             device.destroy_pipeline_layout(self.pipeline_layout, None);
-            self.swapchain.release_swapchain_resources(device);
+            self.swapchain_wrapper.release_swapchain_resources(device);
         }
     }
 
@@ -601,7 +589,7 @@ impl Engine {
             model,
             view: Mat4::look_at_rh(&eye, &origin, &FORWARD),
             proj: nalgebra_glm::perspective_rh(
-                self.swapchain.swapchain_properties.aspect_ratio(),
+                self.swapchain_wrapper.swapchain_properties.aspect_ratio(),
                 60.0_f32.to_radians(),
                 0.1,
                 10.0,
@@ -617,7 +605,7 @@ impl Engine {
                 .map_memory(buffer_mem, 0, size, MemoryMapFlags::empty())
                 .unwrap();
 
-            let mut align = ash::util::Align::new(data_ptr, align_of::<f32>() as _, size);
+            let mut align = Align::new(data_ptr, align_of::<f32>() as _, size);
             align.copy_from_slice(&ubos);
             device.unmap_memory(buffer_mem);
         }
@@ -640,7 +628,7 @@ impl Engine {
         self.cleanup_swapchain();
 
         let device = self.vk_context.device_ref();
-        let extent = self.swapchain.swapchain_properties.extent;
+        let extent = self.swapchain_wrapper.swapchain_properties.extent;
         let dimensions = self
             .resize_dimensions
             .unwrap_or([extent.width, extent.height]);
@@ -689,7 +677,7 @@ impl Engine {
         let command_buffers = Self::create_and_register_command_buffers(
             device,
             self.command_pool,
-            &self.swapchain,
+            &self.swapchain_wrapper,
             &self.render_params,
             render_pass,
             layout,
@@ -711,7 +699,7 @@ impl Engine {
         //     pipeline,
         // );
 
-        self.swapchain.update_internal_resources(
+        self.swapchain_wrapper.update_internal_resources(
             swapchain,
             swapchain_khr,
             properties,
@@ -1029,7 +1017,9 @@ impl Engine {
                     // must also only define 1 layer.
                     .layers(1);
 
-                unsafe { device.create_framebuffer(&framebuffer_info, None).unwrap() }
+                let f = unsafe { device.create_framebuffer(&framebuffer_info, None).unwrap() };
+                log::info!("Is frame buffer null? {}", f.is_null());
+                f
             })
             .collect::<Vec<Framebuffer>>()
     }
@@ -1661,12 +1651,20 @@ impl Engine {
             .level(CommandBufferLevel::PRIMARY)
             .command_buffer_count(swapchain_wrapper.framebuffers.len() as u32);
 
+        log::info!(
+            "Frame Buffer Count: {}",
+            swapchain_wrapper.framebuffers.len()
+        );
+
         let buffers = unsafe { device.allocate_command_buffers(&allocate_info).unwrap() };
         let swapchain_properties = swapchain_wrapper.swapchain_properties;
 
-        buffers.iter().enumerate().for_each(|(i, buffer)| {
+        buffers.iter().enumerate().for_each(|(index, buffer)| {
             let buffer = *buffer;
-            let framebuffer = swapchain_wrapper.framebuffers[i];
+            log::info!("Processing index: {}", index);
+            // TODO: Check if the frame buffer is actually valid here
+            let framebuffer = swapchain_wrapper.framebuffers[index];
+            log::info!("Is frame buffer null? {}", framebuffer.is_null());
 
             // Begin the command buffer
             let command_buffer_begin_info =
@@ -1691,7 +1689,8 @@ impl Engine {
                     },
                 },
             ];
-
+            
+            log::info!("Begin info!");
             let render_pass_begin_info = RenderPassBeginInfo::default()
                 .render_pass(render_pass)
                 .framebuffer(framebuffer)
@@ -1702,6 +1701,7 @@ impl Engine {
                 .clear_values(&clear_values);
 
             unsafe {
+                log::info!("Begin render pass!");
                 device.cmd_begin_render_pass(
                     buffer,
                     &render_pass_begin_info,
@@ -1711,12 +1711,14 @@ impl Engine {
 
             // bind the pipeline
             unsafe {
+                log::info!("Binding the pipeline");
                 device.cmd_bind_pipeline(buffer, PipelineBindPoint::GRAPHICS, graphics_pipeline)
             };
 
             let offsets = [0];
 
             unsafe {
+                log::info!("Render descs: {}", render_descs.len());
                 for render_desc in render_descs {
                     let vertex_buffers = to_array!(render_desc.vertex_buffer);
                     device.cmd_bind_vertex_buffers(buffer, 0, &vertex_buffers, &offsets);
@@ -1747,10 +1749,11 @@ impl Engine {
                     PipelineBindPoint::GRAPHICS,
                     pipeline_layout,
                     0,
-                    &descriptor_sets[i..=i],
+                    &descriptor_sets[index..=index],
                     &null,
                 );
             };
+            log::info!("Finished processing index: {}", index);
 
             // Draw
             unsafe {
@@ -1764,6 +1767,7 @@ impl Engine {
 
             // End the cmd buffer
             unsafe { device.end_command_buffer(buffer).unwrap() };
+            log::info!("Finsihed registering cmd buffer.");
         });
 
         buffers
