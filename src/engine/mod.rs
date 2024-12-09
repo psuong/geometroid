@@ -43,6 +43,8 @@ use nalgebra::{Point3, Unit};
 use nalgebra_glm::{Mat4, Vec2, Vec3, Vec4};
 use physical_devices::pick_physical_device;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+use render::Mesh;
+use render_params::RenderDescriptor;
 use std::{
     ffi::{CStr, CString},
     mem::{align_of, size_of},
@@ -96,10 +98,10 @@ pub struct Engine {
     descriptor_sets: Vec<DescriptorSet>,
     pub graphics_queue: Queue,
     in_flight_frames: InFlightFrames,
-    index_buffer: Buffer,              // TODO: Move to render params?
-    index_buffer_memory: DeviceMemory, // TODO: Move to render params?
-    pipeline: Pipeline,                // TODO: Move this a render pipeline struct
-    pipeline_layout: PipelineLayout,   // Move this to a render pipeline wrapper
+    // index_buffer: Buffer,              // TODO: Move to render params?
+    // index_buffer_memory: DeviceMemory, // TODO: Move to render params?
+    pipeline: Pipeline,              // TODO: Move this a render pipeline struct
+    pipeline_layout: PipelineLayout, // Move this to a render pipeline wrapper
     present_queue: Queue,
     queue_families_indices: QueueFamiliesIndices,
     resize_dimensions: Option<[u32; 2]>,
@@ -111,11 +113,12 @@ pub struct Engine {
     depth_texture: Texture,
     color_texture: Texture,
     texture: Texture,
-    model_index_count: usize,
+    // model_index_count: usize, // TODO: Move to render params
     uniform_buffers: Vec<Buffer>,
     uniform_buffer_memories: Vec<DeviceMemory>,
-    vertex_buffer: Buffer,              // TODO: Move to render params
-    vertex_buffer_memory: DeviceMemory, // TODO: Move to render params
+    // vertex_buffer: Buffer,              // TODO: Move to render params
+    // vertex_buffer_memory: DeviceMemory, // TODO: Move to render params
+    render_params: Vec<RenderDescriptor>,
     pub vk_context: VkContext,
 }
 
@@ -239,18 +242,22 @@ impl Engine {
         // TODO: Move this from the constructor to the update loop. We need to create new uniform
         // buffers and descriptor sets in frame.
         let (vertices, indices) = Self::load_model();
-        let (vertex_buffer, vertex_buffer_memory) = Self::create_vertex_buffer(
-            &vk_context,
-            transient_command_pool,
-            graphics_queue,
-            &vertices,
-        );
-        let (index_buffer, index_buffer_memory) = Self::create_index_buffer(
-            &vk_context,
-            transient_command_pool,
-            graphics_queue,
-            &indices,
-        );
+        let mesh = Mesh::new(vertices, indices);
+        let render_desc =
+            RenderDescriptor::new(&vk_context, graphics_queue, transient_command_pool, &mesh);
+
+        // let (vertex_buffer, vertex_buffer_memory) = Self::create_vertex_buffer(
+        //     &vk_context,
+        //     transient_command_pool,
+        //     graphics_queue,
+        //     &vertices,
+        // );
+        // let (index_buffer, index_buffer_memory) = Self::create_index_buffer(
+        //     &vk_context,
+        //     transient_command_pool,
+        //     graphics_queue,
+        //     &indices,
+        // );
 
         let (uniform_buffers, uniform_buffer_memories) =
             Self::create_uniform_buffers(&vk_context, images.len());
@@ -265,23 +272,7 @@ impl Engine {
             texture,
         );
 
-        let command_buffers = Self::create_and_register_command_buffers(
-            vk_context.device_ref(),
-            command_pool,
-            &swapchain_framebuffers,
-            render_pass,
-            properties,
-            vertex_buffer,
-            index_buffer,
-            indices.len(),
-            layout,
-            &descriptor_sets,
-            pipeline,
-        );
-
-        let in_flight_frames = Self::create_sync_objects(vk_context.device_ref());
-
-        let swapchain_union = SwapchainWrapper::new(
+        let swapchain_wrapper = SwapchainWrapper::new(
             swapchain,
             swapchain_khr,
             images,
@@ -290,6 +281,35 @@ impl Engine {
             swapchain_framebuffers,
             properties,
         );
+
+        let render_descriptors = vec![render_desc];
+
+        let command_buffers = Self::create_and_register_command_buffers(
+            vk_context.device_ref(),
+            command_pool,
+            &swapchain_wrapper,
+            &render_descriptors,
+            render_pass,
+            layout,
+            &descriptor_sets,
+            pipeline,
+        );
+
+        // let command_buffers = Self::create_and_register_command_buffers(
+        //     vk_context.device_ref(),
+        //     command_pool,
+        //     &swapchain_framebuffers,
+        //     render_pass,
+        //     properties,
+        //     vertex_buffer,
+        //     index_buffer,
+        //     indices.len(),
+        //     layout,
+        //     &descriptor_sets,
+        //     pipeline,
+        // );
+
+        let in_flight_frames = Self::create_sync_objects(vk_context.device_ref());
 
         Self {
             dirty_swapchain: false,
@@ -310,18 +330,18 @@ impl Engine {
             pipeline_layout: layout,
             pipeline,
             // swapchain_framebuffers,
-            swapchain: swapchain_union,
+            swapchain: swapchain_wrapper,
             command_pool,
             transient_command_pool,
             msaa_samples,
             depth_format,
             depth_texture,
             texture,
-            model_index_count: indices.len(),
-            vertex_buffer,
-            vertex_buffer_memory,
-            index_buffer,
-            index_buffer_memory,
+            // model_index_count: indices.len(),
+            // vertex_buffer,
+            // vertex_buffer_memory,
+            // index_buffer,
+            // index_buffer_memory,
             uniform_buffers,
             uniform_buffer_memories,
             descriptor_pool,
@@ -329,6 +349,7 @@ impl Engine {
             command_buffers,
             in_flight_frames,
             color_texture,
+            render_params: render_descriptors,
         }
     }
 
@@ -668,16 +689,27 @@ impl Engine {
         let command_buffers = Self::create_and_register_command_buffers(
             device,
             self.command_pool,
-            &swapchain_framebuffers,
+            &self.swapchain,
+            &self.render_params,
             render_pass,
-            properties,
-            self.vertex_buffer,
-            self.index_buffer,
-            self.model_index_count,
             layout,
             &self.descriptor_sets,
             pipeline,
         );
+
+        // let command_buffers = Self::create_and_register_command_buffers(
+        //     device,
+        //     self.command_pool,
+        //     &swapchain_framebuffers,
+        //     render_pass,
+        //     properties,
+        //     self.vertex_buffer,
+        //     self.index_buffer,
+        //     self.model_index_count,
+        //     layout,
+        //     &self.descriptor_sets,
+        //     pipeline,
+        // );
 
         self.swapchain.update_internal_resources(
             swapchain,
@@ -1469,38 +1501,6 @@ impl Engine {
         );
     }
 
-    #[deprecated]
-    fn create_vertex_buffer(
-        vk_context: &VkContext,
-        command_pool: CommandPool,
-        transfer_queue: Queue,
-        vertices: &[Vertex],
-    ) -> (Buffer, DeviceMemory) {
-        create_device_local_buffer_with_data::<u32, _>(
-            vk_context,
-            command_pool,
-            transfer_queue,
-            BufferUsageFlags::VERTEX_BUFFER,
-            vertices,
-        )
-    }
-
-    #[deprecated]
-    fn create_index_buffer(
-        vk_context: &VkContext,
-        command_pool: CommandPool,
-        transfer_queue: Queue,
-        indices: &[u32],
-    ) -> (Buffer, DeviceMemory) {
-        create_device_local_buffer_with_data::<u32, _>(
-            vk_context,
-            command_pool,
-            transfer_queue,
-            BufferUsageFlags::INDEX_BUFFER,
-            indices,
-        )
-    }
-
     fn create_uniform_buffers(
         vk_context: &VkContext,
         count: usize,
@@ -1645,96 +1645,99 @@ impl Engine {
         }
     }
 
-    fn create_and_register_command_buffers1(
-        device: &AshDevice,
-        pool: CommandPool,
-        framebuffers: &[Framebuffer],
-        swapchain_wrapper: &SwapchainWrapper,
-    ) {
-    }
-
-    #[deprecated]
     fn create_and_register_command_buffers(
         device: &AshDevice,
         pool: CommandPool,
-        framebuffers: &[Framebuffer],
+        swapchain_wrapper: &SwapchainWrapper,
+        render_descs: &Vec<RenderDescriptor>,
         render_pass: RenderPass,
-        swapchain_properties: SwapchainProperties,
-        vertex_buffer: Buffer,
-        index_buffer: Buffer,
-        index_count: usize,
         pipeline_layout: PipelineLayout,
         descriptor_sets: &[DescriptorSet],
         graphics_pipeline: Pipeline,
     ) -> Vec<CommandBuffer> {
+        log::info!("Registering cmd buffer.");
         let allocate_info = CommandBufferAllocateInfo::default()
             .command_pool(pool)
             .level(CommandBufferLevel::PRIMARY)
-            .command_buffer_count(framebuffers.len() as u32);
+            .command_buffer_count(swapchain_wrapper.framebuffers.len() as u32);
 
         let buffers = unsafe { device.allocate_command_buffers(&allocate_info).unwrap() };
+        let swapchain_properties = swapchain_wrapper.swapchain_properties;
 
         buffers.iter().enumerate().for_each(|(i, buffer)| {
             let buffer = *buffer;
-            let framebuffer = framebuffers[i];
+            let framebuffer = swapchain_wrapper.framebuffers[i];
 
             // Begin the command buffer
-            {
-                let command_buffer_begin_info = CommandBufferBeginInfo::default()
-                    .flags(CommandBufferUsageFlags::SIMULTANEOUS_USE);
-                unsafe {
-                    device
-                        .begin_command_buffer(buffer, &command_buffer_begin_info)
-                        .unwrap();
-                }
+            let command_buffer_begin_info =
+                CommandBufferBeginInfo::default().flags(CommandBufferUsageFlags::SIMULTANEOUS_USE);
+            unsafe {
+                device
+                    .begin_command_buffer(buffer, &command_buffer_begin_info)
+                    .unwrap();
             }
 
             // begin the render pass
-            {
-                let clear_values = [
-                    ClearValue {
-                        color: ClearColorValue {
-                            float32: [0.0, 0.0, 0.0, 1.0],
-                        },
+            let clear_values = [
+                ClearValue {
+                    color: ClearColorValue {
+                        float32: [0.0, 0.0, 0.0, 1.0],
                     },
-                    ClearValue {
-                        depth_stencil: ClearDepthStencilValue {
-                            depth: 1.0,
-                            stencil: 0,
-                        },
+                },
+                ClearValue {
+                    depth_stencil: ClearDepthStencilValue {
+                        depth: 1.0,
+                        stencil: 0,
                     },
-                ];
+                },
+            ];
 
-                let render_pass_begin_info = RenderPassBeginInfo::default()
-                    .render_pass(render_pass)
-                    .framebuffer(framebuffer)
-                    .render_area(Rect2D {
-                        offset: Offset2D { x: 0, y: 0 },
-                        extent: swapchain_properties.extent,
-                    })
-                    .clear_values(&clear_values);
+            let render_pass_begin_info = RenderPassBeginInfo::default()
+                .render_pass(render_pass)
+                .framebuffer(framebuffer)
+                .render_area(Rect2D {
+                    offset: Offset2D { x: 0, y: 0 },
+                    extent: swapchain_properties.extent,
+                })
+                .clear_values(&clear_values);
 
-                unsafe {
-                    device.cmd_begin_render_pass(
-                        buffer,
-                        &render_pass_begin_info,
-                        SubpassContents::INLINE,
-                    )
-                };
-            }
+            unsafe {
+                device.cmd_begin_render_pass(
+                    buffer,
+                    &render_pass_begin_info,
+                    SubpassContents::INLINE,
+                )
+            };
 
             // bind the pipeline
             unsafe {
                 device.cmd_bind_pipeline(buffer, PipelineBindPoint::GRAPHICS, graphics_pipeline)
             };
 
-            // Bind vertex buffer
-            let vertex_buffers = [vertex_buffer];
             let offsets = [0];
-            unsafe { device.cmd_bind_vertex_buffers(buffer, 0, &vertex_buffers, &offsets) };
+
+            unsafe {
+                for render_desc in render_descs {
+                    let vertex_buffers = to_array!(render_desc.vertex_buffer);
+                    device.cmd_bind_vertex_buffers(buffer, 0, &vertex_buffers, &offsets);
+                    device.cmd_bind_index_buffer(
+                        buffer,
+                        render_desc.index_buffer,
+                        0,
+                        IndexType::UINT32,
+                    )
+                }
+            }
+
+            // Bind vertex buffer
+            // let vertex_buffers = to_array!(render_desc.vertex_buffer);
+            // let offsets = [0];
+            // unsafe { device.cmd_bind_vertex_buffers(buffer, 0, &vertex_buffers, &offsets) };
 
             // Bind the index buffer
-            unsafe { device.cmd_bind_index_buffer(buffer, index_buffer, 0, IndexType::UINT32) };
+            // unsafe {
+            //     device.cmd_bind_index_buffer(buffer, render_desc.index_buffer, 0, IndexType::UINT32)
+            // };
 
             // TODO: Bind the descriptor set
             unsafe {
@@ -1750,7 +1753,11 @@ impl Engine {
             };
 
             // Draw
-            unsafe { device.cmd_draw_indexed(buffer, index_count as _, 1, 0, 0, 0) }
+            unsafe {
+                for render_desc in render_descs {
+                    device.cmd_draw_indexed(buffer, render_desc.index_count as _, 1, 0, 0, 0);
+                }
+            }
 
             // End the renderpass
             unsafe { device.cmd_end_render_pass(buffer) };
@@ -1879,10 +1886,11 @@ impl Drop for Engine {
             self.uniform_buffers
                 .iter()
                 .for_each(|b| device.destroy_buffer(*b, None));
-            device.free_memory(self.index_buffer_memory, None);
-            device.destroy_buffer(self.index_buffer, None);
-            device.destroy_buffer(self.vertex_buffer, None);
-            device.free_memory(self.vertex_buffer_memory, None);
+
+            self.render_params.iter_mut().for_each(|render_param| {
+                render_param.release(device);
+            });
+
             self.texture.destroy(device);
             device.destroy_command_pool(self.transient_command_pool, None);
             device.destroy_command_pool(self.command_pool, None);
