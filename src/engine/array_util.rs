@@ -1,4 +1,5 @@
 #[inline]
+#[deprecated(note = "Use the macro instead")]
 pub fn as_array<T>(element: T) -> [T; 1] {
     [element]
 }

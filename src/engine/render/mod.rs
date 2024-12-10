@@ -22,53 +22,6 @@ impl Mesh {
     }
 }
 
-// pub const VERTICES: [Vertex; 8] = [
-//     // First quad
-//     Vertex {
-//         position: vec3(-0.5, -0.5, 0.0),
-//         color: vec3(1.0, 1.0, 1.0),
-//         uv: vec2(0.0, 0.0),
-//     },
-//     Vertex {
-//         position: vec3(0.5, -0.5, 0.0),
-//         color: vec3(1.0, 1.0, 1.0),
-//         uv: vec2(1.0, 0.0),
-//     },
-//     Vertex {
-//         position: vec3(0.5, 0.5, 0.0),
-//         color: vec3(1.0, 1.0, 1.0),
-//         uv: vec2(1.0, 1.0),
-//     },
-//     Vertex {
-//         position: vec3(-0.5, 0.5, 0.0),
-//         color: vec3(1.0, 1.0, 1.0),
-//         uv: vec2(0.0, 1.0),
-//     },
-//     // Second quad
-//     Vertex {
-//         position: vec3(-0.5, -0.5, -0.5),
-//         color: vec3(1.0, 0.0, 0.0),
-//         uv: vec2(0.0, 0.0),
-//     },
-//     Vertex {
-//         position: vec3(0.5, -0.5, -0.5),
-//         color: vec3(1.0, 0.0, 0.0),
-//         uv: vec2(1.0, 0.0),
-//     },
-//     Vertex {
-//         position: vec3(0.5, 0.5, -0.5),
-//         color: vec3(1.0, 0.0, 0.0),
-//         uv: vec2(1.0, 1.0),
-//     },
-//     Vertex {
-//         position: vec3(-0.5, 0.5, -0.5),
-//         color: vec3(1.0, 0.0, 0.0),
-//         uv: vec2(0.0, 1.0),
-//     },
-// ];
-
-// pub const INDICES: [u16; 12] = [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7];
-
 #[derive(Copy, Clone)]
 pub struct Vertex {
     pub position: Vec3,

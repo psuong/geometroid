@@ -193,7 +193,7 @@ pub fn execute_one_time_commands<T: FnOnce(CommandBuffer)>(
 ///
 /// # Returns
 /// The index of the memory type from mem_properties.
-fn find_memory_type(
+pub fn find_memory_type(
     requirements: MemoryRequirements,
     mem_properties: PhysicalDeviceMemoryProperties,
     required_properties: MemoryPropertyFlags,

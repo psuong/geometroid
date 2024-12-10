@@ -3,9 +3,9 @@ use crate::engine::{render::Vertex, shader_utils::read_shader_from_file};
 use crate::math::{select, FORWARD, UP};
 use crate::to_array;
 
-use array_util::{as_array, empty};
+use crate::engine::render::render_desc::RenderDescriptor;
+use array_util::empty;
 use ash::util::Align;
-use ash::vk::Handle;
 use ash::{
     ext::debug_utils,
     khr::{surface as khr_surface, swapchain as khr_swapchain},
@@ -25,10 +25,9 @@ use ash::{
         ImageCreateFlags, ImageCreateInfo, ImageLayout, ImageMemoryBarrier, ImageSubresourceLayers,
         ImageSubresourceRange, ImageTiling, ImageType, ImageUsageFlags, ImageView,
         ImageViewCreateInfo, ImageViewType, IndexType, InstanceCreateFlags, InstanceCreateInfo,
-        LogicOp, MemoryAllocateInfo, MemoryBarrier, MemoryMapFlags, MemoryPropertyFlags,
-        MemoryRequirements, Offset2D, Offset3D, PhysicalDevice, PhysicalDeviceFeatures,
-        PhysicalDeviceMemoryProperties, Pipeline, PipelineBindPoint, PipelineCache,
-        PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo,
+        LogicOp, MemoryAllocateInfo, MemoryBarrier, MemoryMapFlags, MemoryPropertyFlags, Offset2D,
+        Offset3D, PhysicalDevice, PhysicalDeviceFeatures, Pipeline, PipelineBindPoint,
+        PipelineCache, PipelineColorBlendAttachmentState, PipelineColorBlendStateCreateInfo,
         PipelineDepthStencilStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PipelineLayout,
         PipelineLayoutCreateInfo, PipelineMultisampleStateCreateInfo,
         PipelineRasterizationStateCreateInfo, PipelineShaderStageCreateInfo, PipelineStageFlags,
@@ -40,13 +39,12 @@ use ash::{
     },
     Device as AshDevice, Entry, Instance,
 };
-use memory::{create_buffer, execute_one_time_commands};
+use memory::{create_buffer, execute_one_time_commands, find_memory_type};
 use nalgebra::{Point3, Unit};
 use nalgebra_glm::{Mat4, Vec2, Vec3, Vec4};
 use physical_devices::pick_physical_device;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use render::Mesh;
-use crate::engine::render::render_desc::RenderDescriptor;
 use std::{
     ffi::{CStr, CString},
     mem::{align_of, size_of},
@@ -99,8 +97,6 @@ pub struct Engine {
     descriptor_sets: Vec<DescriptorSet>,
     pub graphics_queue: Queue,
     in_flight_frames: InFlightFrames,
-    // index_buffer: Buffer,              // TODO: Move to render params?
-    // index_buffer_memory: DeviceMemory, // TODO: Move to render params?
     pipeline: Pipeline,              // TODO: Move this a render pipeline struct
     pipeline_layout: PipelineLayout, // Move this to a render pipeline wrapper
     present_queue: Queue,
@@ -114,11 +110,8 @@ pub struct Engine {
     depth_texture: Texture,
     color_texture: Texture,
     texture: Texture,
-    // model_index_count: usize, // TODO: Move to render params
     uniform_buffers: Vec<Buffer>,
     uniform_buffer_memories: Vec<DeviceMemory>,
-    // vertex_buffer: Buffer,              // TODO: Move to render params
-    // vertex_buffer_memory: DeviceMemory, // TODO: Move to render params
     render_params: Vec<RenderDescriptor>,
     pub vk_context: VkContext,
 }
@@ -1029,9 +1022,7 @@ impl Engine {
                     // must also only define 1 layer.
                     .layers(1);
 
-                let f = unsafe { device.create_framebuffer(&framebuffer_info, None).unwrap() };
-                log::info!("Is frame buffer null? {}", f.is_null());
-                f
+                unsafe { device.create_framebuffer(&framebuffer_info, None).unwrap() }
             })
             .collect::<Vec<Framebuffer>>()
     }
@@ -1193,7 +1184,7 @@ impl Engine {
         // Like a buffer we need to know what are the requirements for the image.
         let mem_requirements =
             unsafe { vk_context.device_ref().get_image_memory_requirements(image) };
-        let mem_type_index = Self::find_memory_type(
+        let mem_type_index = find_memory_type(
             mem_requirements,
             vk_context.get_mem_properties(),
             mem_properties,
@@ -1401,7 +1392,7 @@ impl Engine {
                     barrier.src_access_mask = AccessFlags::TRANSFER_WRITE;
                     barrier.dst_access_mask = AccessFlags::TRANSFER_READ;
 
-                    let barriers = as_array(barrier);
+                    let barriers = to_array!(barrier);
 
                     unsafe {
                         vk_context.device_ref().cmd_pipeline_barrier(
@@ -1415,37 +1406,35 @@ impl Engine {
                         );
                     };
 
-                    let blits = as_array(
-                        ImageBlit::default()
-                            .src_offsets([
-                                Offset3D { x: 0, y: 0, z: 0 },
-                                Offset3D {
-                                    x: mip_width,
-                                    y: mip_height,
-                                    z: 1,
-                                },
-                            ])
-                            .src_subresource(ImageSubresourceLayers {
-                                aspect_mask: ImageAspectFlags::COLOR,
-                                mip_level: level - 1,
-                                base_array_layer: 0,
-                                layer_count: 1,
-                            })
-                            .dst_offsets([
-                                Offset3D { x: 0, y: 0, z: 0 },
-                                Offset3D {
-                                    x: next_mip_width,
-                                    y: next_mip_height,
-                                    z: 1,
-                                },
-                            ])
-                            .dst_subresource(ImageSubresourceLayers {
-                                aspect_mask: ImageAspectFlags::COLOR,
-                                mip_level: level,
-                                base_array_layer: 0,
-                                layer_count: 1,
-                            }),
-                    );
+                    let blits = to_array!(ImageBlit::default()
+                        .src_offsets([
+                            Offset3D { x: 0, y: 0, z: 0 },
+                            Offset3D {
+                                x: mip_width,
+                                y: mip_height,
+                                z: 1,
+                            },
+                        ])
+                        .src_subresource(ImageSubresourceLayers {
+                            aspect_mask: ImageAspectFlags::COLOR,
+                            mip_level: level - 1,
+                            base_array_layer: 0,
+                            layer_count: 1,
+                        })
+                        .dst_offsets([
+                            Offset3D { x: 0, y: 0, z: 0 },
+                            Offset3D {
+                                x: next_mip_width,
+                                y: next_mip_height,
+                                z: 1,
+                            },
+                        ])
+                        .dst_subresource(ImageSubresourceLayers {
+                            aspect_mask: ImageAspectFlags::COLOR,
+                            mip_level: level,
+                            base_array_layer: 0,
+                            layer_count: 1,
+                        }));
 
                     unsafe {
                         vk_context.device_ref().cmd_blit_image(
@@ -1463,7 +1452,7 @@ impl Engine {
                     barrier.new_layout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
                     barrier.src_access_mask = AccessFlags::TRANSFER_READ;
                     barrier.dst_access_mask = AccessFlags::SHADER_READ;
-                    let barriers = as_array(barrier);
+                    let barriers = to_array!(barrier);
 
                     unsafe {
                         vk_context.device_ref().cmd_pipeline_barrier(
@@ -1565,29 +1554,6 @@ impl Engine {
         format == Format::D32_SFLOAT_S8_UINT || format == Format::D24_UNORM_S8_UINT
     }
 
-    /// Finds a memory type in the mem_properties that is suitable
-    /// for requirements and supports required_properties.
-    ///
-    /// # Returns
-    /// The index of the memory type from mem_properties.
-    #[deprecated]
-    fn find_memory_type(
-        requirements: MemoryRequirements,
-        mem_properties: PhysicalDeviceMemoryProperties,
-        required_properties: MemoryPropertyFlags,
-    ) -> u32 {
-        for i in 0..mem_properties.memory_type_count {
-            if requirements.memory_type_bits & (1 << i) != 0
-                && mem_properties.memory_types[i as usize]
-                    .property_flags
-                    .contains(required_properties)
-            {
-                return i;
-            }
-        }
-        panic!("Failed to find a suitable memory type!");
-    }
-
     fn create_color_texture(
         vk_context: &VkContext,
         command_pool: CommandPool,
@@ -1647,114 +1613,6 @@ impl Engine {
         }
     }
 
-    fn create_and_register_command_buffers_old(
-        device: &AshDevice,
-        pool: CommandPool,
-        framebuffers: &[Framebuffer],
-        render_pass: RenderPass,
-        swapchain_properties: SwapchainProperties,
-        vertex_buffer: Buffer,
-        index_buffer: Buffer,
-        index_count: usize,
-        pipeline_layout: PipelineLayout,
-        descriptor_sets: &[DescriptorSet],
-        graphics_pipeline: Pipeline,
-    ) -> Vec<CommandBuffer> {
-        let allocate_info = CommandBufferAllocateInfo::default()
-            .command_pool(pool)
-            .level(CommandBufferLevel::PRIMARY)
-            .command_buffer_count(framebuffers.len() as u32);
-
-        let buffers = unsafe { device.allocate_command_buffers(&allocate_info).unwrap() };
-
-        buffers.iter().enumerate().for_each(|(i, buffer)| {
-            let buffer = *buffer;
-            let framebuffer = framebuffers[i];
-
-            // Begin the command buffer
-            {
-                let command_buffer_begin_info = CommandBufferBeginInfo::default()
-                    .flags(CommandBufferUsageFlags::SIMULTANEOUS_USE);
-                unsafe {
-                    device
-                        .begin_command_buffer(buffer, &command_buffer_begin_info)
-                        .unwrap();
-                }
-            }
-
-            // begin the render pass
-            {
-                let clear_values = [
-                    ClearValue {
-                        color: ClearColorValue {
-                            float32: [0.0, 0.0, 0.0, 1.0],
-                        },
-                    },
-                    ClearValue {
-                        depth_stencil: ClearDepthStencilValue {
-                            depth: 1.0,
-                            stencil: 0,
-                        },
-                    },
-                ];
-
-                let render_pass_begin_info = RenderPassBeginInfo::default()
-                    .render_pass(render_pass)
-                    .framebuffer(framebuffer)
-                    .render_area(Rect2D {
-                        offset: Offset2D { x: 0, y: 0 },
-                        extent: swapchain_properties.extent,
-                    })
-                    .clear_values(&clear_values);
-
-                unsafe {
-                    device.cmd_begin_render_pass(
-                        buffer,
-                        &render_pass_begin_info,
-                        SubpassContents::INLINE,
-                    )
-                };
-            }
-
-            // bind the pipeline
-            unsafe {
-                device.cmd_bind_pipeline(buffer, PipelineBindPoint::GRAPHICS, graphics_pipeline)
-            };
-
-            // Bind vertex buffer
-            let vertex_buffers = [vertex_buffer];
-            let offsets = [0];
-            unsafe { device.cmd_bind_vertex_buffers(buffer, 0, &vertex_buffers, &offsets) };
-
-            // Bind the index buffer
-            unsafe { device.cmd_bind_index_buffer(buffer, index_buffer, 0, IndexType::UINT32) };
-
-            // TODO: Bind the descriptor set
-            unsafe {
-                let null = [];
-                device.cmd_bind_descriptor_sets(
-                    buffer,
-                    PipelineBindPoint::GRAPHICS,
-                    pipeline_layout,
-                    0,
-                    &descriptor_sets[i..=i],
-                    &null,
-                );
-            };
-
-            // Draw
-            unsafe { device.cmd_draw_indexed(buffer, index_count as _, 1, 0, 0, 0) }
-
-            // End the renderpass
-            unsafe { device.cmd_end_render_pass(buffer) };
-
-            // End the cmd buffer
-            unsafe { device.end_command_buffer(buffer).unwrap() };
-        });
-
-        buffers
-    }
-
     fn create_and_register_command_buffers(
         device: &AshDevice,
         pool: CommandPool,
@@ -1781,10 +1639,7 @@ impl Engine {
 
         buffers.iter().enumerate().for_each(|(index, buffer)| {
             let buffer = *buffer;
-            log::info!("Processing index: {}", index);
-            // TODO: Check if the frame buffer is actually valid here
             let framebuffer = swapchain_wrapper.framebuffers[index];
-            log::info!("Is frame buffer null? {}", framebuffer.is_null());
 
             // Begin the command buffer
             let command_buffer_begin_info =
