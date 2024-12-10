@@ -274,6 +274,19 @@ impl Engine {
             texture,
         );
 
+        // let command_buffers = Self::create_and_register_command_buffers_old(
+        //     vk_context.device_ref(),
+        //     command_pool,
+        //     &swapchain_framebuffers,
+        //     render_pass,
+        //     properties,
+        //     render_desc.vertex_buffer,
+        //     render_desc.index_buffer,
+        //     render_desc.index_count,
+        //     layout,
+        //     &descriptor_sets,
+        //     pipeline);
+
         let swapchain_wrapper = SwapchainWrapper::new(
             swapchain,
             swapchain_khr,
@@ -589,7 +602,7 @@ impl Engine {
             model,
             view: Mat4::look_at_rh(&eye, &origin, &FORWARD),
             proj: nalgebra_glm::perspective_rh(
-                self.swapchain_wrapper.swapchain_properties.aspect_ratio(),
+                self.swapchain_wrapper.properties.aspect_ratio(),
                 60.0_f32.to_radians(),
                 0.1,
                 10.0,
@@ -624,16 +637,15 @@ impl Engine {
         log::debug!("Recreating swapchain");
         // We must wait for the device to be idling before we recreate the swapchain
         self.wait_gpu_idle();
-
         self.cleanup_swapchain();
 
         let device = self.vk_context.device_ref();
-        let extent = self.swapchain_wrapper.swapchain_properties.extent;
+        let extent = self.swapchain_wrapper.properties.extent;
         let dimensions = self
             .resize_dimensions
             .unwrap_or([extent.width, extent.height]);
 
-        let (swapchain, swapchain_khr, properties, images) =
+        let (swapchain_loader, swapchain_khr, properties, images) =
             create_swapchain_and_images(&self.vk_context, self.queue_families_indices, dimensions);
         let swapchain_image_views = create_swapchain_image_views(device, &images, properties);
 
@@ -674,6 +686,16 @@ impl Engine {
             properties,
         );
 
+        self.swapchain_wrapper.update_internal_resources(
+            swapchain_loader,
+            swapchain_khr,
+            properties,
+            images,
+            swapchain_image_views,
+            render_pass,
+            swapchain_framebuffers,
+        );
+
         let command_buffers = Self::create_and_register_command_buffers(
             device,
             self.command_pool,
@@ -699,22 +721,13 @@ impl Engine {
         //     pipeline,
         // );
 
-        self.swapchain_wrapper.update_internal_resources(
-            swapchain,
-            swapchain_khr,
-            properties,
-            images,
-            swapchain_image_views,
-            render_pass,
-            swapchain_framebuffers,
-        );
-
         // self.swapchain = swapchain;
         // self.swapchain_khr = swapchain_khr;
         // self.swapchain_properties = properties;
         // self.images = images;
         // self.swapchain_image_views = swapchain_image_views;
         // self.render_pass = render_pass;
+        // self.swapchain_wrapper = swapchain_wrapper;
         self.pipeline = pipeline;
         self.pipeline_layout = layout;
         self.color_texture = color_texture;
@@ -1635,6 +1648,114 @@ impl Engine {
         }
     }
 
+    fn create_and_register_command_buffers_old(
+        device: &AshDevice,
+        pool: CommandPool,
+        framebuffers: &[Framebuffer],
+        render_pass: RenderPass,
+        swapchain_properties: SwapchainProperties,
+        vertex_buffer: Buffer,
+        index_buffer: Buffer,
+        index_count: usize,
+        pipeline_layout: PipelineLayout,
+        descriptor_sets: &[DescriptorSet],
+        graphics_pipeline: Pipeline,
+    ) -> Vec<CommandBuffer> {
+        let allocate_info = CommandBufferAllocateInfo::default()
+            .command_pool(pool)
+            .level(CommandBufferLevel::PRIMARY)
+            .command_buffer_count(framebuffers.len() as u32);
+
+        let buffers = unsafe { device.allocate_command_buffers(&allocate_info).unwrap() };
+
+        buffers.iter().enumerate().for_each(|(i, buffer)| {
+            let buffer = *buffer;
+            let framebuffer = framebuffers[i];
+
+            // Begin the command buffer
+            {
+                let command_buffer_begin_info = CommandBufferBeginInfo::default()
+                    .flags(CommandBufferUsageFlags::SIMULTANEOUS_USE);
+                unsafe {
+                    device
+                        .begin_command_buffer(buffer, &command_buffer_begin_info)
+                        .unwrap();
+                }
+            }
+
+            // begin the render pass
+            {
+                let clear_values = [
+                    ClearValue {
+                        color: ClearColorValue {
+                            float32: [0.0, 0.0, 0.0, 1.0],
+                        },
+                    },
+                    ClearValue {
+                        depth_stencil: ClearDepthStencilValue {
+                            depth: 1.0,
+                            stencil: 0,
+                        },
+                    },
+                ];
+
+                let render_pass_begin_info = RenderPassBeginInfo::default()
+                    .render_pass(render_pass)
+                    .framebuffer(framebuffer)
+                    .render_area(Rect2D {
+                        offset: Offset2D { x: 0, y: 0 },
+                        extent: swapchain_properties.extent,
+                    })
+                    .clear_values(&clear_values);
+
+                unsafe {
+                    device.cmd_begin_render_pass(
+                        buffer,
+                        &render_pass_begin_info,
+                        SubpassContents::INLINE,
+                    )
+                };
+            }
+
+            // bind the pipeline
+            unsafe {
+                device.cmd_bind_pipeline(buffer, PipelineBindPoint::GRAPHICS, graphics_pipeline)
+            };
+
+            // Bind vertex buffer
+            let vertex_buffers = [vertex_buffer];
+            let offsets = [0];
+            unsafe { device.cmd_bind_vertex_buffers(buffer, 0, &vertex_buffers, &offsets) };
+
+            // Bind the index buffer
+            unsafe { device.cmd_bind_index_buffer(buffer, index_buffer, 0, IndexType::UINT32) };
+
+            // TODO: Bind the descriptor set
+            unsafe {
+                let null = [];
+                device.cmd_bind_descriptor_sets(
+                    buffer,
+                    PipelineBindPoint::GRAPHICS,
+                    pipeline_layout,
+                    0,
+                    &descriptor_sets[i..=i],
+                    &null,
+                );
+            };
+
+            // Draw
+            unsafe { device.cmd_draw_indexed(buffer, index_count as _, 1, 0, 0, 0) }
+
+            // End the renderpass
+            unsafe { device.cmd_end_render_pass(buffer) };
+
+            // End the cmd buffer
+            unsafe { device.end_command_buffer(buffer).unwrap() };
+        });
+
+        buffers
+    }
+
     fn create_and_register_command_buffers(
         device: &AshDevice,
         pool: CommandPool,
@@ -1657,7 +1778,7 @@ impl Engine {
         );
 
         let buffers = unsafe { device.allocate_command_buffers(&allocate_info).unwrap() };
-        let swapchain_properties = swapchain_wrapper.swapchain_properties;
+        let swapchain_properties = swapchain_wrapper.properties;
 
         buffers.iter().enumerate().for_each(|(index, buffer)| {
             let buffer = *buffer;
@@ -1689,7 +1810,7 @@ impl Engine {
                     },
                 },
             ];
-            
+
             log::info!("Begin info!");
             let render_pass_begin_info = RenderPassBeginInfo::default()
                 .render_pass(render_pass)

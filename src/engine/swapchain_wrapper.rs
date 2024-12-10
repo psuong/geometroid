@@ -32,9 +32,9 @@ pub struct SwapchainWrapper {
     pub khr: SwapchainKHR,
     pub images: Vec<Image>,
     pub image_views: Vec<ImageView>,
-    pub render_pass: RenderPass,
+    pub render_pass: RenderPass, // TODO: Move this to a render pipeline struct instead.
     pub framebuffers: Vec<Framebuffer>,
-    pub swapchain_properties: SwapchainProperties,
+    pub properties: SwapchainProperties,
 }
 
 impl SwapchainWrapper {
@@ -54,7 +54,7 @@ impl SwapchainWrapper {
             image_views,
             render_pass,
             framebuffers,
-            swapchain_properties,
+            properties: swapchain_properties,
         }
     }
 
@@ -70,7 +70,7 @@ impl SwapchainWrapper {
     ) {
         self.loader = loader;
         self.khr = khr;
-        self.swapchain_properties = swapchain_properties;
+        self.properties = swapchain_properties;
         self.images = images;
         self.image_views = image_views;
         self.render_pass = render_pass;
@@ -162,6 +162,7 @@ impl SwapchainSupportDetails {
     }
 }
 
+// TODO: Move this to a render pipeline struct instead.
 pub fn create_render_pass(
     device: &AshDevice,
     swapchain_properties: SwapchainProperties,
