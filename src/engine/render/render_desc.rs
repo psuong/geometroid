@@ -3,7 +3,9 @@ use ash::{
     Device,
 };
 
-use super::{context::VkContext, memory::create_device_local_buffer_with_data, render::Mesh};
+use crate::engine::{context::VkContext, memory::create_device_local_buffer_with_data};
+
+use super::Mesh;
 
 pub struct RenderDescriptor {
     pub vertex_buffer: Buffer,

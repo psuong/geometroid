@@ -46,7 +46,7 @@ use nalgebra_glm::{Mat4, Vec2, Vec3, Vec4};
 use physical_devices::pick_physical_device;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use render::Mesh;
-use render_params::RenderDescriptor;
+use crate::engine::render::render_desc::RenderDescriptor;
 use std::{
     ffi::{CStr, CString},
     mem::{align_of, size_of},
@@ -69,7 +69,6 @@ pub mod memory;
 pub mod mesh_builder;
 pub mod physical_devices;
 pub mod render;
-pub mod render_params;
 pub mod shader_utils;
 pub mod shapes;
 pub mod swapchain_wrapper;

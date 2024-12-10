@@ -1,10 +1,11 @@
-use std::{ffi::OsStr, mem, path::Path};
-
+use std::mem;
 use ash::vk::{
     Format, VertexInputAttributeDescription, VertexInputBindingDescription, VertexInputRate,
 };
 use memoffset::offset_of;
 use nalgebra_glm::{Vec2, Vec3, Vec4};
+
+pub mod render_desc;
 
 pub struct Mesh {
     pub vertices: Vec<Vertex>,
@@ -17,7 +18,7 @@ impl Mesh {
     }
 
     pub fn index_count(&self) -> usize {
-        self.indices.len() as usize
+        self.indices.len()
     }
 }
 
