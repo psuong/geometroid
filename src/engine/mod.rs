@@ -1,9 +1,8 @@
 pub(crate) use crate::common::MAX_FRAMES_IN_FLIGHT;
+use crate::engine::render::render_desc::RenderDescriptor;
 use crate::engine::{render::Vertex, shader_utils::read_shader_from_file};
 use crate::math::{select, FORWARD, UP};
 use crate::to_array;
-
-use crate::engine::render::render_desc::RenderDescriptor;
 use array_util::empty;
 use ash::util::Align;
 use ash::{
@@ -74,18 +73,17 @@ pub mod texture;
 pub mod uniform_buffer_object;
 pub mod utils;
 
+use self::shader_utils::create_shader_module;
+use self::texture::Texture;
+use self::uniform_buffer_object::UniformBufferObject;
+use self::utils::{InFlightFrames, SyncObjects};
+use crate::{common::HEIGHT, WIDTH};
 use context::VkContext;
 use debug::{
     check_validation_layer_support, get_layer_names_and_pointers, setup_debug_messenger,
     ENABLE_VALIDATION_LAYERS,
 };
 use utils::QueueFamiliesIndices;
-
-use self::shader_utils::create_shader_module;
-use self::texture::Texture;
-use self::uniform_buffer_object::UniformBufferObject;
-use self::utils::{InFlightFrames, SyncObjects};
-use crate::{common::HEIGHT, WIDTH};
 
 pub struct Engine {
     pub dirty_swapchain: bool,
@@ -156,7 +154,7 @@ impl Engine {
 
         let dimensions = [WIDTH, HEIGHT];
 
-        let (swapchain, swapchain_khr, properties, images) =
+        let (swapchain_loader, swapchain_khr, properties, images) =
             create_swapchain_and_images(&vk_context, queue_families_indices, dimensions);
 
         let swapchain_image_views =
@@ -240,19 +238,6 @@ impl Engine {
         let render_desc =
             RenderDescriptor::new(&vk_context, graphics_queue, transient_command_pool, &mesh);
 
-        // let (vertex_buffer, vertex_buffer_memory) = Self::create_vertex_buffer(
-        //     &vk_context,
-        //     transient_command_pool,
-        //     graphics_queue,
-        //     &vertices,
-        // );
-        // let (index_buffer, index_buffer_memory) = Self::create_index_buffer(
-        //     &vk_context,
-        //     transient_command_pool,
-        //     graphics_queue,
-        //     &indices,
-        // );
-
         let (uniform_buffers, uniform_buffer_memories) =
             Self::create_uniform_buffers(&vk_context, images.len());
 
@@ -266,21 +251,8 @@ impl Engine {
             texture,
         );
 
-        // let command_buffers = Self::create_and_register_command_buffers_old(
-        //     vk_context.device_ref(),
-        //     command_pool,
-        //     &swapchain_framebuffers,
-        //     render_pass,
-        //     properties,
-        //     render_desc.vertex_buffer,
-        //     render_desc.index_buffer,
-        //     render_desc.index_count,
-        //     layout,
-        //     &descriptor_sets,
-        //     pipeline);
-
         let swapchain_wrapper = SwapchainWrapper::new(
-            swapchain,
+            swapchain_loader,
             swapchain_khr,
             images,
             swapchain_image_views,
@@ -313,16 +285,9 @@ impl Engine {
             queue_families_indices,
             graphics_queue,
             present_queue,
-            // swapchain,
-            // swapchain_khr,
-            // swapchain_properties: properties,
-            // images,
-            // swapchain_image_views,
-            // render_pass,
             descriptor_set_layout,
             pipeline_layout: layout,
             pipeline,
-            // swapchain_framebuffers,
             swapchain_wrapper,
             command_pool,
             transient_command_pool,
@@ -330,11 +295,6 @@ impl Engine {
             depth_format,
             depth_texture,
             texture,
-            // model_index_count: indices.len(),
-            // vertex_buffer,
-            // vertex_buffer_memory,
-            // index_buffer,
-            // index_buffer_memory,
             uniform_buffers,
             uniform_buffer_memories,
             descriptor_pool,
@@ -699,32 +659,10 @@ impl Engine {
             pipeline,
         );
 
-        // let command_buffers = Self::create_and_register_command_buffers(
-        //     device,
-        //     self.command_pool,
-        //     &swapchain_framebuffers,
-        //     render_pass,
-        //     properties,
-        //     self.vertex_buffer,
-        //     self.index_buffer,
-        //     self.model_index_count,
-        //     layout,
-        //     &self.descriptor_sets,
-        //     pipeline,
-        // );
-
-        // self.swapchain = swapchain;
-        // self.swapchain_khr = swapchain_khr;
-        // self.swapchain_properties = properties;
-        // self.images = images;
-        // self.swapchain_image_views = swapchain_image_views;
-        // self.render_pass = render_pass;
-        // self.swapchain_wrapper = swapchain_wrapper;
         self.pipeline = pipeline;
         self.pipeline_layout = layout;
         self.color_texture = color_texture;
         self.depth_texture = depth_texture;
-        // self.swapchain_framebuffers = swapchain_framebuffers;
         self.command_buffers = command_buffers;
     }
 

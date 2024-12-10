@@ -1,11 +1,9 @@
+use super::Mesh;
+use crate::engine::{context::VkContext, memory::create_device_local_buffer_with_data};
 use ash::{
     vk::{Buffer, BufferUsageFlags, CommandPool, DeviceMemory, Queue},
     Device,
 };
-
-use crate::engine::{context::VkContext, memory::create_device_local_buffer_with_data};
-
-use super::Mesh;
 
 pub struct RenderDescriptor {
     pub vertex_buffer: Buffer,

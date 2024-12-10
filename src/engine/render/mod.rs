@@ -1,11 +1,12 @@
-use std::mem;
 use ash::vk::{
     Format, VertexInputAttributeDescription, VertexInputBindingDescription, VertexInputRate,
 };
 use memoffset::offset_of;
 use nalgebra_glm::{Vec2, Vec3, Vec4};
+use std::mem;
 
 pub mod render_desc;
+pub mod render_pipeline;
 
 pub struct Mesh {
     pub vertices: Vec<Vertex>,

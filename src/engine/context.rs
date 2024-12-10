@@ -80,11 +80,6 @@ impl VkContext {
         &self.surface
     }
     
-    #[deprecated]
-    pub fn surface_khr(&self) -> SurfaceKHR {
-        self.surface_khr
-    }
-
     pub fn physical_device_ref(&self) -> PhysicalDevice {
         self.physical_device
     }

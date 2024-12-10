@@ -1,14 +1,11 @@
-use std::ffi::CStr;
-
+use super::swapchain_wrapper::SwapchainSupportDetails;
+use crate::engine::utils::QueueFamiliesIndices;
 use ash::{
     khr::surface,
     vk::{PhysicalDevice, PhysicalDeviceType, QueueFlags, SurfaceKHR, TRUE},
     Instance,
 };
-
-use crate::engine::utils::QueueFamiliesIndices;
-
-use super::swapchain_wrapper::SwapchainSupportDetails;
+use std::ffi::CStr;
 
 /// Attempts to pick the physical graphics device that supports what we need. The highest priority
 /// is a discrete GPU and supports our device. Otherwise, we need to just pick a device that

@@ -1,3 +1,4 @@
+use super::{context::VkContext, utils::QueueFamiliesIndices};
 use ash::{
     khr::{surface, swapchain::Device as SwapchainDevice},
     vk::{
@@ -11,8 +12,6 @@ use ash::{
     },
     Device as AshDevice,
 };
-
-use super::{context::VkContext, utils::QueueFamiliesIndices};
 
 #[derive(Clone, Copy, Debug)]
 pub struct SwapchainProperties {
