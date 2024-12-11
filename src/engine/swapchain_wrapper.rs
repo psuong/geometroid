@@ -31,8 +31,10 @@ pub struct SwapchainWrapper {
     pub khr: SwapchainKHR,
     pub images: Vec<Image>,
     pub image_views: Vec<ImageView>,
-    pub render_pass: RenderPass, // TODO: Move this to a render pipeline struct instead.
-    pub framebuffers: Vec<Framebuffer>,
+    // #[deprecated]
+    // pub render_pass: RenderPass, // TODO: Move this to a render pipeline struct instead.
+    // #[deprecated]
+    // pub framebuffers: Vec<Framebuffer>, // TODO: Move this to a render pipeline struct instead.
     pub properties: SwapchainProperties,
 }
 
@@ -42,8 +44,8 @@ impl SwapchainWrapper {
         khr: SwapchainKHR,
         images: Vec<Image>,
         image_views: Vec<ImageView>,
-        render_pass: RenderPass,
-        framebuffers: Vec<Framebuffer>,
+        // render_pass: RenderPass,
+        // framebuffers: Vec<Framebuffer>,
         swapchain_properties: SwapchainProperties,
     ) -> Self {
         SwapchainWrapper {
@@ -51,8 +53,8 @@ impl SwapchainWrapper {
             khr,
             images,
             image_views,
-            render_pass,
-            framebuffers,
+            // render_pass,
+            // framebuffers,
             properties: swapchain_properties,
         }
     }
@@ -64,21 +66,21 @@ impl SwapchainWrapper {
         swapchain_properties: SwapchainProperties,
         images: Vec<Image>,
         image_views: Vec<ImageView>,
-        render_pass: RenderPass,
-        framebuffers: Vec<Framebuffer>,
+        // render_pass: RenderPass,
+        // framebuffers: Vec<Framebuffer>,
     ) {
         self.loader = loader;
         self.khr = khr;
         self.properties = swapchain_properties;
         self.images = images;
         self.image_views = image_views;
-        self.render_pass = render_pass;
-        self.framebuffers = framebuffers;
+        // self.render_pass = render_pass;
+        // self.framebuffers = framebuffers;
     }
 
     pub fn release_swapchain_resources(&self, ash_device: &AshDevice) {
         unsafe {
-            ash_device.destroy_render_pass(self.render_pass, None);
+            // ash_device.destroy_render_pass(self.render_pass, None);
             self.image_views.iter().for_each(|v| {
                 ash_device.destroy_image_view(*v, None);
             });
@@ -162,6 +164,7 @@ impl SwapchainSupportDetails {
 }
 
 // TODO: Move this to a render pipeline struct instead.
+#[deprecated]
 pub fn create_render_pass(
     device: &AshDevice,
     swapchain_properties: SwapchainProperties,

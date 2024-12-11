@@ -43,6 +43,7 @@ use nalgebra::{Point3, Unit};
 use nalgebra_glm::{Mat4, Vec2, Vec3, Vec4};
 use physical_devices::pick_physical_device;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+use render::render_pipeline::RenderPipeline;
 use render::Mesh;
 use std::{
     ffi::{CStr, CString},
@@ -52,8 +53,8 @@ use std::{
     time::Instant,
 };
 use swapchain_wrapper::{
-    create_render_pass, create_swapchain_and_images, create_swapchain_image_views,
-    SwapchainProperties, SwapchainWrapper,
+    create_swapchain_and_images, create_swapchain_image_views, SwapchainProperties,
+    SwapchainWrapper,
 };
 use winit::window::Window;
 
@@ -90,26 +91,29 @@ pub struct Engine {
     // pub mouse_inputs: MouseInputs,
     command_buffers: Vec<CommandBuffer>,
     pub command_pool: CommandPool,
-    descriptor_set_layout: DescriptorSetLayout,
-    descriptor_pool: DescriptorPool,
-    descriptor_sets: Vec<DescriptorSet>,
+    // descriptor_set_layout: DescriptorSetLayout,
+    // descriptor_pool: DescriptorPool,
+    // descriptor_sets: Vec<DescriptorSet>,
     pub graphics_queue: Queue,
     in_flight_frames: InFlightFrames,
-    pipeline: Pipeline,              // TODO: Move this a render pipeline struct
-    pipeline_layout: PipelineLayout, // Move this to a render pipeline wrapper
+    // #[deprecated]
+    // pipeline: Pipeline, // TODO: Move this a render pipeline struct
+    // #[deprecated]
+    // pipeline_layout: PipelineLayout, // TODO: Move this to a render pipeline wrapper
     present_queue: Queue,
     queue_families_indices: QueueFamiliesIndices,
     resize_dimensions: Option<[u32; 2]>,
     _start_instant: Instant,
     swapchain_wrapper: SwapchainWrapper,
+    render_pipeline: RenderPipeline,
     transient_command_pool: CommandPool,
     msaa_samples: SampleCountFlags,
     depth_format: Format,
     depth_texture: Texture,
     color_texture: Texture,
     texture: Texture,
-    uniform_buffers: Vec<Buffer>,
-    uniform_buffer_memories: Vec<DeviceMemory>,
+    // uniform_buffers: Vec<Buffer>,
+    // uniform_buffer_memories: Vec<DeviceMemory>,
     render_params: Vec<RenderDescriptor>,
     pub vk_context: VkContext,
 }
@@ -163,20 +167,20 @@ impl Engine {
         let msaa_samples = vk_context.get_max_usable_sample_count();
         let depth_format = Self::find_depth_format(vk_context.instance_ref(), physical_device);
 
-        let render_pass = create_render_pass(
-            vk_context.device_ref(),
-            properties,
-            msaa_samples,
-            depth_format,
-        );
-        let descriptor_set_layout = Self::create_descriptor_set_layout(vk_context.device_ref());
-        let (pipeline, layout) = Self::create_pipeline(
-            vk_context.device_ref(),
-            properties,
-            msaa_samples,
-            render_pass,
-            descriptor_set_layout,
-        );
+        // let render_pass = create_render_pass(
+        //     vk_context.device_ref(),
+        //     properties,
+        //     msaa_samples,
+        //     depth_format,
+        // );
+        // let descriptor_set_layout = Self::create_descriptor_set_layout(vk_context.device_ref());
+        // let (pipeline, layout) = Self::create_pipeline(
+        //     vk_context.device_ref(),
+        //     properties,
+        //     msaa_samples,
+        //     render_pass,
+        //     descriptor_set_layout,
+        // );
 
         let command_pool = Self::create_command_pool(
             vk_context.device_ref(),
@@ -207,16 +211,45 @@ impl Engine {
             msaa_samples,
         );
 
-        let swapchain_framebuffers = Self::create_framebuffers(
-            vk_context.device_ref(),
-            &swapchain_image_views,
-            color_texture,
-            depth_texture,
-            render_pass,
-            properties,
-        );
+        // let swapchain_framebuffers = Self::create_framebuffers(
+        //     vk_context.device_ref(),
+        //     &swapchain_image_views,
+        //     color_texture,
+        //     depth_texture,
+        //     render_pass,
+        //     properties,
+        // );
 
         let texture = Self::create_texture_image(&vk_context, command_pool, graphics_queue);
+
+        let render_pipeline = RenderPipeline::new(3)
+            .initialize_render_pass(
+                vk_context.device_ref(),
+                properties,
+                msaa_samples,
+                depth_format,
+            )
+            .initialize_framebuffers(
+                vk_context.device_ref(),
+                &swapchain_image_views,
+                color_texture,
+                depth_texture,
+                properties,
+            )
+            .create_descriptor_pool(vk_context.device_ref(), images.len() as _)
+            .create_descriptor_set_layout(vk_context.device_ref())
+            .create_uniform_buffers(&vk_context, images.len())
+            .create_descriptor_sets(vk_context.device_ref(), texture)
+            .create_pipeline(vk_context.device_ref(), properties, msaa_samples);
+
+        // let descriptor_set_layout = Self::create_descriptor_set_layout(vk_context.device_ref());
+        // let (pipeline, layout) = Self::create_pipeline(
+        //     vk_context.device_ref(),
+        //     properties,
+        //     msaa_samples,
+        //     render_pass,
+        //     descriptor_set_layout,
+        // );
 
         // TODO: create entities to load
         // let mut mesh_builder = MeshBuilder::with_capacity(24);
@@ -238,26 +271,24 @@ impl Engine {
         let render_desc =
             RenderDescriptor::new(&vk_context, graphics_queue, transient_command_pool, &mesh);
 
-        let (uniform_buffers, uniform_buffer_memories) =
-            Self::create_uniform_buffers(&vk_context, images.len());
+        // let (uniform_buffers, uniform_buffer_memories) =
+        //     Self::create_uniform_buffers(&vk_context, images.len());
 
-        let descriptor_pool =
-            Self::create_descriptor_pool(vk_context.device_ref(), images.len() as _);
-        let descriptor_sets = Self::create_descriptor_sets(
-            vk_context.device_ref(),
-            descriptor_pool,
-            descriptor_set_layout,
-            &uniform_buffers,
-            texture,
-        );
+        // let descriptor_pool =
+        //     Self::create_descriptor_pool(vk_context.device_ref(), images.len() as _);
+        // let descriptor_sets = Self::create_descriptor_sets(
+        //     vk_context.device_ref(),
+        //     descriptor_pool,
+        //     descriptor_set_layout,
+        //     &uniform_buffers,
+        //     texture,
+        // );
 
         let swapchain_wrapper = SwapchainWrapper::new(
             swapchain_loader,
             swapchain_khr,
             images,
             swapchain_image_views,
-            render_pass,
-            swapchain_framebuffers,
             properties,
         );
 
@@ -268,10 +299,11 @@ impl Engine {
             command_pool,
             &swapchain_wrapper,
             &render_descriptors,
-            render_pass,
-            layout,
-            &descriptor_sets,
-            pipeline,
+            *render_pipeline
+            // render_pass,
+            // layout,
+            // &descriptor_sets,
+            // pipeline,
         );
 
         let in_flight_frames = Self::create_sync_objects(vk_context.device_ref());
@@ -285,9 +317,9 @@ impl Engine {
             queue_families_indices,
             graphics_queue,
             present_queue,
-            descriptor_set_layout,
-            pipeline_layout: layout,
-            pipeline,
+            // descriptor_set_layout,
+            // pipeline_layout: layout,
+            // pipeline,
             swapchain_wrapper,
             command_pool,
             transient_command_pool,
@@ -295,10 +327,11 @@ impl Engine {
             depth_format,
             depth_texture,
             texture,
-            uniform_buffers,
-            uniform_buffer_memories,
-            descriptor_pool,
-            descriptor_sets,
+            render_pipeline: *render_pipeline,
+            // uniform_buffers,
+            // uniform_buffer_memories,
+            // descriptor_pool,
+            // descriptor_sets,
             command_buffers,
             in_flight_frames,
             color_texture,
@@ -451,6 +484,7 @@ impl Engine {
 
     /// Descriptor set layouts can only be created in a pool like a command buffer.
     /// The pool size needs to accomodate the image sampler and the uniform buffer.
+    #[deprecated]
     fn create_descriptor_pool(device: &AshDevice, size: u32) -> DescriptorPool {
         let ubo_pool_size = DescriptorPoolSize {
             ty: DescriptorType::UNIFORM_BUFFER,
@@ -483,6 +517,7 @@ impl Engine {
     /// - 1. Per Pass Resources
     /// - 2. Material Resources
     /// - 3. Per Object Resources
+    #[deprecated]
     fn create_descriptor_sets(
         device: &AshDevice,
         pool: DescriptorPool,
@@ -539,6 +574,7 @@ impl Engine {
         descriptor_sets
     }
 
+    #[deprecated(note = "Move to render_pipeline")]
     fn update_uniform_buffers(&mut self, current_image: u32) {
         // let elapsed = self._start_instant.elapsed();
         // let elapsed = elapsed.as_secs() as f32 + (elapsed.subsec_millis() as f32) / 1000.0;
@@ -595,7 +631,7 @@ impl Engine {
         let extent = self.swapchain_wrapper.properties.extent;
         let dimensions = self
             .resize_dimensions
-            .unwrap_or([extent.width, extent.height]);
+            .unwrap_or(to_array!(extent.width, extent.height));
 
         let (swapchain_loader, swapchain_khr, properties, images) =
             create_swapchain_and_images(&self.vk_context, self.queue_families_indices, dimensions);
@@ -759,6 +795,7 @@ impl Engine {
     /// the shader has enough information.
     ///
     /// A common example is binding 2 buffers and an image to the mesh.
+    #[deprecated]
     fn create_descriptor_set_layout(device: &AshDevice) -> DescriptorSetLayout {
         let ubo_binding = UniformBufferObject::get_descriptor_set_layout_binding();
         let sampler_binding = DescriptorSetLayoutBinding::default()
@@ -776,6 +813,7 @@ impl Engine {
         }
     }
 
+    #[deprecated]
     fn create_pipeline(
         device: &AshDevice,
         swapchain_properties: SwapchainProperties,
@@ -1430,6 +1468,7 @@ impl Engine {
         );
     }
 
+    #[deprecated]
     fn create_uniform_buffers(
         vk_context: &VkContext,
         count: usize,
@@ -1556,28 +1595,25 @@ impl Engine {
         pool: CommandPool,
         swapchain_wrapper: &SwapchainWrapper,
         render_descs: &Vec<RenderDescriptor>,
-        render_pass: RenderPass,
-        pipeline_layout: PipelineLayout,
-        descriptor_sets: &[DescriptorSet],
-        graphics_pipeline: Pipeline,
+        render_pipeline: RenderPipeline, // render_pass: RenderPass,
+                                          // pipeline_layout: PipelineLayout,
+                                          // descriptor_sets: &[DescriptorSet],
+                                          // graphics_pipeline: Pipeline,
     ) -> Vec<CommandBuffer> {
         log::info!("Registering cmd buffer.");
         let allocate_info = CommandBufferAllocateInfo::default()
             .command_pool(pool)
             .level(CommandBufferLevel::PRIMARY)
-            .command_buffer_count(swapchain_wrapper.framebuffers.len() as u32);
+            .command_buffer_count(render_pipeline.framebuffers.len() as u32);
 
-        log::info!(
-            "Frame Buffer Count: {}",
-            swapchain_wrapper.framebuffers.len()
-        );
+        log::info!("Frame Buffer Count: {}", render_pipeline.framebuffers.len());
 
         let buffers = unsafe { device.allocate_command_buffers(&allocate_info).unwrap() };
         let swapchain_properties = swapchain_wrapper.properties;
 
         buffers.iter().enumerate().for_each(|(index, buffer)| {
             let buffer = *buffer;
-            let framebuffer = swapchain_wrapper.framebuffers[index];
+            let framebuffer = render_pipeline.framebuffers[index];
 
             // Begin the command buffer
             let command_buffer_begin_info =
@@ -1605,7 +1641,7 @@ impl Engine {
 
             log::info!("Begin info!");
             let render_pass_begin_info = RenderPassBeginInfo::default()
-                .render_pass(render_pass)
+                .render_pass(render_pipeline.render_pass.unwrap())
                 .framebuffer(framebuffer)
                 .render_area(Rect2D {
                     offset: Offset2D { x: 0, y: 0 },
@@ -1625,7 +1661,11 @@ impl Engine {
             // bind the pipeline
             unsafe {
                 log::info!("Binding the pipeline");
-                device.cmd_bind_pipeline(buffer, PipelineBindPoint::GRAPHICS, graphics_pipeline)
+                device.cmd_bind_pipeline(
+                    buffer,
+                    PipelineBindPoint::GRAPHICS,
+                    render_pipeline.pipeline.unwrap(),
+                )
             };
 
             let offsets = [0];
@@ -1660,9 +1700,9 @@ impl Engine {
                 device.cmd_bind_descriptor_sets(
                     buffer,
                     PipelineBindPoint::GRAPHICS,
-                    pipeline_layout,
+                    render_pipeline.pipeline_layout.unwrap(),
                     0,
-                    &descriptor_sets[index..=index],
+                    &render_pipeline.descriptor_sets[index..=index],
                     &null,
                 );
             };
@@ -1795,6 +1835,7 @@ impl Drop for Engine {
         let device = self.vk_context.device_ref();
         self.in_flight_frames.destroy(device);
         unsafe {
+            // TODO: Move this to engine releasing
             device.destroy_descriptor_pool(self.descriptor_pool, None);
             device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
             self.uniform_buffer_memories
