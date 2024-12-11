@@ -10,7 +10,7 @@ use crate::{
         texture::Texture,
         uniform_buffer_object::UniformBufferObject,
     },
-    to_array,
+    to_array, unwrap_read_ref, unwrap_read_write_ref, unwrap_value,
 };
 use ash::{
     vk::{
@@ -36,12 +36,12 @@ use ash::{
 // TODO: Implement the copy trait or wrap it into an Option
 #[derive(Clone, Debug)]
 pub struct RenderPipeline {
-    pub framebuffers: Vec<Framebuffer>,
+    pub framebuffers: Option<Vec<Framebuffer>>,
     pub render_pass: Option<RenderPass>,
     pub descriptor_set_layout: Option<DescriptorSetLayout>,
     pub descriptor_pool: Option<DescriptorPool>,
-    pub descriptor_sets: Vec<DescriptorSet>,
-    pub uniform_buffers: Vec<(Buffer, DeviceMemory)>,
+    pub descriptor_sets: Option<Vec<DescriptorSet>>,
+    pub uniform_buffers: Option<Vec<(Buffer, DeviceMemory)>>,
     pub pipeline: Option<Pipeline>,
     pub pipeline_layout: Option<PipelineLayout>,
 }
@@ -49,12 +49,12 @@ pub struct RenderPipeline {
 impl RenderPipeline {
     pub fn new(capacity: usize) -> Self {
         Self {
-            framebuffers: Vec::with_capacity(capacity),
+            framebuffers: Some(Vec::with_capacity(capacity)),
             render_pass: None,
             descriptor_set_layout: None,
             descriptor_pool: None,
-            descriptor_sets: Vec::new(),
-            uniform_buffers: Vec::new(),
+            descriptor_sets: None,
+            uniform_buffers: Some(Vec::new()),
             pipeline: None,
             pipeline_layout: None,
         }
@@ -163,7 +163,9 @@ impl RenderPipeline {
         swapchain_properties: SwapchainProperties,
     ) -> &mut RenderPipeline {
         if let Some(pass) = self.render_pass {
-            self.framebuffers.clear();
+            let framebuffers = unwrap_value!(&mut self.framebuffers);
+            framebuffers.clear();
+
             image_views
                 .iter()
                 .map(|view| [color_texture.view, depth_texture.view, *view])
@@ -180,14 +182,14 @@ impl RenderPipeline {
                     unsafe { device.create_framebuffer(&framebuffer_info, None).unwrap() }
                 })
                 .for_each(|framebuffer| {
-                    self.framebuffers.push(framebuffer);
+                    framebuffers.push(framebuffer);
                 });
         }
         self
     }
 
     pub fn create_descriptor_set_layout(&mut self, device: &Device) -> &mut RenderPipeline {
-        Some(UniformBufferObject::get_descriptor_set_layout(device));
+        self.descriptor_set_layout = Some(UniformBufferObject::get_descriptor_set_layout(device));
         self
     }
 
@@ -237,7 +239,8 @@ impl RenderPipeline {
             let pool = self.descriptor_pool.unwrap();
             let layout = self.descriptor_set_layout.unwrap();
 
-            let layouts = (0..self.uniform_buffers.len())
+            let uniform_buffers = unwrap_value!(&self.uniform_buffers);
+            let layouts = (0..uniform_buffers.len())
                 .map(|_| layout)
                 .collect::<Vec<_>>();
 
@@ -248,7 +251,7 @@ impl RenderPipeline {
             let descriptor_sets = unsafe { device.allocate_descriptor_sets(&alloc_info).unwrap() };
             descriptor_sets
                 .iter()
-                .zip(self.uniform_buffers.iter())
+                .zip(uniform_buffers.iter())
                 .for_each(|(set, (buffer, _))| {
                     let buffer_info = DescriptorBufferInfo::default()
                         .buffer(*buffer)
@@ -282,6 +285,7 @@ impl RenderPipeline {
 
                     unsafe { device.update_descriptor_sets(&descriptor_writes, &null) }
                 });
+            self.descriptor_sets = Some(descriptor_sets);
         }
         self
     }
@@ -291,7 +295,8 @@ impl RenderPipeline {
         vk_context: &VkContext,
         count: usize,
     ) -> &mut RenderPipeline {
-        self.uniform_buffers.clear();
+        let uniform_buffers = unwrap_read_write_ref!(self.uniform_buffers);
+        uniform_buffers.clear();
 
         let size = size_of::<UniformBufferObject>() as DeviceSize;
         for _ in 0..count {
@@ -301,7 +306,7 @@ impl RenderPipeline {
                 BufferUsageFlags::UNIFORM_BUFFER,
                 MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
             );
-            self.uniform_buffers.push((buffer, memory));
+            uniform_buffers.push((buffer, memory));
         }
         self
     }
@@ -431,7 +436,7 @@ impl RenderPipeline {
             .blend_constants([0.0, 0.0, 0.0, 0.0]);
 
         let layout = {
-            let layouts = to_array!(self.descriptor_set_layout.unwrap());
+            let layouts = to_array!(unwrap_value!(self.descriptor_set_layout));
             let layout_info = PipelineLayoutCreateInfo::default().set_layouts(&layouts);
 
             unsafe { device.create_pipeline_layout(&layout_info, None).unwrap() }
@@ -447,7 +452,7 @@ impl RenderPipeline {
             .depth_stencil_state(&depth_stencil_info)
             .color_blend_state(&color_blending_info)
             .layout(layout)
-            .render_pass(self.render_pass.unwrap())
+            .render_pass(unwrap_value!(self.render_pass))
             .subpass(0);
         let pipeline_infos = to_array!(pipeline_info);
 
@@ -469,9 +474,41 @@ impl RenderPipeline {
 
     pub fn release(&self, device: &Device) {
         unsafe {
-            self.framebuffers
+            let framebuffers = unwrap_read_ref!(self.framebuffers);
+            framebuffers
                 .iter()
                 .for_each(|f| device.destroy_framebuffer(*f, None));
+
+            device.destroy_pipeline(unwrap_value!(self.pipeline), None);
+            device.destroy_pipeline_layout(unwrap_value!(self.pipeline_layout), None);
+        }
+    }
+
+    pub fn build(&mut self) -> RenderPipeline {
+        let framebuffers = unwrap_value!(self.framebuffers.take());
+        let descriptor_sets = unwrap_value!(self.descriptor_sets.take());
+        let uniform_buffers = unwrap_value!(self.uniform_buffers.take());
+        RenderPipeline {
+            framebuffers: Some(framebuffers),
+            render_pass: self.render_pass,
+            descriptor_set_layout: self.descriptor_set_layout,
+            descriptor_pool: self.descriptor_pool,
+            descriptor_sets: Some(descriptor_sets),
+            uniform_buffers: Some(uniform_buffers),
+            pipeline: self.pipeline,
+            pipeline_layout: self.pipeline_layout,
+        }
+    }
+
+    pub fn drop(&mut self, device: &Device) {
+        unsafe {
+            device.destroy_descriptor_pool(unwrap_value!(self.descriptor_pool), None);
+            device.destroy_descriptor_set_layout(unwrap_value!(self.descriptor_set_layout), None);
+            let uniform_buffers = unwrap_read_ref!(self.uniform_buffers);
+            uniform_buffers.iter().for_each(|(buffer, memory)| {
+                device.free_memory(*memory, None);
+                device.destroy_buffer(*buffer, None);
+            });
         }
     }
 }

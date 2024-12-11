@@ -2,7 +2,7 @@ pub(crate) use crate::common::MAX_FRAMES_IN_FLIGHT;
 use crate::engine::render::render_desc::RenderDescriptor;
 use crate::engine::{render::Vertex, shader_utils::read_shader_from_file};
 use crate::math::{select, FORWARD, UP};
-use crate::to_array;
+use crate::{to_array, unwrap_read_ref, unwrap_value};
 use array_util::empty;
 use ash::util::Align;
 use ash::{
@@ -240,7 +240,8 @@ impl Engine {
             .create_descriptor_set_layout(vk_context.device_ref())
             .create_uniform_buffers(&vk_context, images.len())
             .create_descriptor_sets(vk_context.device_ref(), texture)
-            .create_pipeline(vk_context.device_ref(), properties, msaa_samples);
+            .create_pipeline(vk_context.device_ref(), properties, msaa_samples)
+            .build();
 
         // let descriptor_set_layout = Self::create_descriptor_set_layout(vk_context.device_ref());
         // let (pipeline, layout) = Self::create_pipeline(
@@ -299,11 +300,10 @@ impl Engine {
             command_pool,
             &swapchain_wrapper,
             &render_descriptors,
-            *render_pipeline
-            // render_pass,
-            // layout,
-            // &descriptor_sets,
-            // pipeline,
+            &render_pipeline, // render_pass,
+                              // layout,
+                              // &descriptor_sets,
+                              // pipeline,
         );
 
         let in_flight_frames = Self::create_sync_objects(vk_context.device_ref());
@@ -327,7 +327,7 @@ impl Engine {
             depth_format,
             depth_texture,
             texture,
-            render_pipeline: *render_pipeline,
+            render_pipeline: render_pipeline,
             // uniform_buffers,
             // uniform_buffer_memories,
             // descriptor_pool,
@@ -416,8 +416,8 @@ impl Engine {
         self.update_uniform_buffers(image_index);
 
         let device = self.vk_context.device_ref();
-        let wait_semaphores = [image_available_semaphore];
-        let signal_semaphores = [render_finished_semaphore];
+        let wait_semaphores = to_array!(image_available_semaphore);
+        let signal_semaphores = to_array!(render_finished_semaphore);
 
         // Submit command buffer
         {
@@ -471,13 +471,14 @@ impl Engine {
         unsafe {
             self.depth_texture.destroy(device);
             self.color_texture.destroy(device);
-            self.swapchain_wrapper
-                .framebuffers
-                .iter()
-                .for_each(|f| device.destroy_framebuffer(*f, None));
+            // self.swapchain_wrapper
+            //     .framebuffers
+            //     .iter()
+            //     .for_each(|f| device.destroy_framebuffer(*f, None));
             device.free_command_buffers(self.command_pool, &self.command_buffers);
-            device.destroy_pipeline(self.pipeline, None);
-            device.destroy_pipeline_layout(self.pipeline_layout, None);
+            self.render_pipeline.release(device);
+            // device.destroy_pipeline(self.pipeline, None);
+            // device.destroy_pipeline_layout(self.pipeline_layout, None);
             self.swapchain_wrapper.release_swapchain_resources(device);
         }
     }
@@ -598,7 +599,9 @@ impl Engine {
         };
 
         let ubos = [ubo];
-        let buffer_mem = self.uniform_buffer_memories[current_image as usize];
+        let (_, buffer_mem) =
+            unwrap_read_ref!(self.render_pipeline.uniform_buffers)[current_image as usize];
+        // let buffer_mem = self.uniform_buffer_memories[current_image as usize];
         let size = size_of::<UniformBufferObject>() as DeviceSize;
         unsafe {
             let device = self.vk_context.device_ref();
@@ -627,79 +630,85 @@ impl Engine {
         self.wait_gpu_idle();
         self.cleanup_swapchain();
 
-        let device = self.vk_context.device_ref();
-        let extent = self.swapchain_wrapper.properties.extent;
-        let dimensions = self
-            .resize_dimensions
-            .unwrap_or(to_array!(extent.width, extent.height));
+        // let device = self.vk_context.device_ref();
+        // let extent = self.swapchain_wrapper.properties.extent;
+        // let dimensions = self
+        //     .resize_dimensions
+        //     .unwrap_or(to_array!(extent.width, extent.height));
 
-        let (swapchain_loader, swapchain_khr, properties, images) =
-            create_swapchain_and_images(&self.vk_context, self.queue_families_indices, dimensions);
-        let swapchain_image_views = create_swapchain_image_views(device, &images, properties);
+        // let (swapchain_loader, swapchain_khr, properties, images) =
+        //     create_swapchain_and_images(&self.vk_context, self.queue_families_indices, dimensions);
+        // let swapchain_image_views = create_swapchain_image_views(device, &images, properties);
 
-        let render_pass =
-            create_render_pass(device, properties, self.msaa_samples, self.depth_format);
+        // let render_pass =
+        //     create_render_pass(device, properties, self.msaa_samples, self.depth_format);
 
-        let (pipeline, layout) = Self::create_pipeline(
-            device,
-            properties,
-            self.msaa_samples,
-            render_pass,
-            self.descriptor_set_layout,
-        );
+        // let (pipeline, layout) = Self::create_pipeline(
+        //     device,
+        //     properties,
+        //     self.msaa_samples,
+        //     render_pass,
+        //     self.descriptor_set_layout,
+        // );
 
-        let color_texture = Self::create_color_texture(
-            &self.vk_context,
-            self.command_pool,
-            self.graphics_queue,
-            properties,
-            self.msaa_samples,
-        );
+        // let color_texture = Self::create_color_texture(
+        //     &self.vk_context,
+        //     self.command_pool,
+        //     self.graphics_queue,
+        //     properties,
+        //     self.msaa_samples,
+        // );
 
-        let depth_texture = Self::create_depth_texture(
-            &self.vk_context,
-            self.command_pool,
-            self.graphics_queue,
-            self.depth_format,
-            properties.extent,
-            self.msaa_samples,
-        );
+        // let depth_texture = Self::create_depth_texture(
+        //     &self.vk_context,
+        //     self.command_pool,
+        //     self.graphics_queue,
+        //     self.depth_format,
+        //     properties.extent,
+        //     self.msaa_samples,
+        // );
 
-        let swapchain_framebuffers = Self::create_framebuffers(
-            device,
-            &swapchain_image_views,
-            color_texture,
-            depth_texture,
-            render_pass,
-            properties,
-        );
+        // let swapchain_framebuffers = Self::create_framebuffers(
+        //     device,
+        //     &swapchain_image_views,
+        //     color_texture,
+        //     depth_texture,
+        //     render_pass,
+        //     properties,
+        // );
 
-        self.swapchain_wrapper.update_internal_resources(
-            swapchain_loader,
-            swapchain_khr,
-            properties,
-            images,
-            swapchain_image_views,
-            render_pass,
-            swapchain_framebuffers,
-        );
+        // self.swapchain_wrapper.update_internal_resources(
+        //     swapchain_loader,
+        //     swapchain_khr,
+        //     properties,
+        //     images,
+        //     swapchain_image_views,
+        // );
 
-        let command_buffers = Self::create_and_register_command_buffers(
-            device,
-            self.command_pool,
-            &self.swapchain_wrapper,
-            &self.render_params,
-            render_pass,
-            layout,
-            &self.descriptor_sets,
-            pipeline,
-        );
+        // let command_buffers = Self::create_and_register_command_buffers(
+        //     device,
+        //     self.command_pool,
+        //     &self.swapchain_wrapper,
+        //     &self.render_params,
+        //     self.render_pipeline,
+        // );
 
-        self.pipeline = pipeline;
-        self.pipeline_layout = layout;
-        self.color_texture = color_texture;
-        self.depth_texture = depth_texture;
-        self.command_buffers = command_buffers;
+        // // let command_buffers = Self::create_and_register_command_buffers(
+        // //     device,
+        // //     self.command_pool,
+        // //     &self.swapchain_wrapper,
+        // //     &self.render_params,
+        // //     render_pass,
+        // //     layout,
+        // //     &self.descriptor_sets,
+        // //     pipeline,
+        // // );
+
+        // // self.pipeline = pipeline;
+        // // self.pipeline_layout = layout;
+        // self.color_texture = color_texture;
+        // self.depth_texture = depth_texture;
+        // self.command_buffers = command_buffers;
     }
 
     /// Force the engine to wait because ALL vulkan operations are async.
@@ -1595,25 +1604,24 @@ impl Engine {
         pool: CommandPool,
         swapchain_wrapper: &SwapchainWrapper,
         render_descs: &Vec<RenderDescriptor>,
-        render_pipeline: RenderPipeline, // render_pass: RenderPass,
-                                          // pipeline_layout: PipelineLayout,
-                                          // descriptor_sets: &[DescriptorSet],
-                                          // graphics_pipeline: Pipeline,
+        render_pipeline: &RenderPipeline, // render_pass: RenderPass,
+                                         // pipeline_layout: PipelineLayout,
+                                         // descriptor_sets: &[DescriptorSet],
+                                         // graphics_pipeline: Pipeline,
     ) -> Vec<CommandBuffer> {
         log::info!("Registering cmd buffer.");
+        let framebuffers = unwrap_read_ref!(render_pipeline.framebuffers);
         let allocate_info = CommandBufferAllocateInfo::default()
             .command_pool(pool)
             .level(CommandBufferLevel::PRIMARY)
-            .command_buffer_count(render_pipeline.framebuffers.len() as u32);
-
-        log::info!("Frame Buffer Count: {}", render_pipeline.framebuffers.len());
+            .command_buffer_count(framebuffers.len() as u32);
 
         let buffers = unsafe { device.allocate_command_buffers(&allocate_info).unwrap() };
         let swapchain_properties = swapchain_wrapper.properties;
 
         buffers.iter().enumerate().for_each(|(index, buffer)| {
             let buffer = *buffer;
-            let framebuffer = render_pipeline.framebuffers[index];
+            let framebuffer = framebuffers[index];
 
             // Begin the command buffer
             let command_buffer_begin_info =
@@ -1702,7 +1710,7 @@ impl Engine {
                     PipelineBindPoint::GRAPHICS,
                     render_pipeline.pipeline_layout.unwrap(),
                     0,
-                    &render_pipeline.descriptor_sets[index..=index],
+                    &unwrap_read_ref!(render_pipeline.descriptor_sets)[index..=index],
                     &null,
                 );
             };
@@ -1836,15 +1844,16 @@ impl Drop for Engine {
         self.in_flight_frames.destroy(device);
         unsafe {
             // TODO: Move this to engine releasing
-            device.destroy_descriptor_pool(self.descriptor_pool, None);
-            device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
-            self.uniform_buffer_memories
-                .iter()
-                .for_each(|m| device.free_memory(*m, None));
-            self.uniform_buffers
-                .iter()
-                .for_each(|b| device.destroy_buffer(*b, None));
+            // device.destroy_descriptor_pool(self.descriptor_pool, None);
+            // device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
+            // self.uniform_buffer_memories
+            //     .iter()
+            //     .for_each(|m| device.free_memory(*m, None));
+            // self.uniform_buffers
+            //     .iter()
+            //     .for_each(|b| device.destroy_buffer(*b, None));
 
+            self.render_pipeline.drop(device);
             self.render_params.iter_mut().for_each(|render_param| {
                 render_param.release(device);
             });

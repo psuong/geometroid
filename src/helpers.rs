@@ -10,3 +10,33 @@ macro_rules! to_array {
         [$($val),*]
     };
 }
+
+#[macro_export]
+macro_rules! unwrap_value {
+    ($opt:expr) => {
+        match $opt {
+            Some(val) => val,
+            None => panic!("Stored value in the option was not initialized!"),
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! unwrap_read_write_ref {
+    ($opt:expr) => {
+        match $opt {
+            Some(ref mut val) => val,
+            None => panic!("Option was None!"),
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! unwrap_read_ref {
+    ($opt:expr) => {
+        match $opt {
+            Some(ref val) => val,
+            None => panic!("Option was None!"),
+        }
+    };
+}
