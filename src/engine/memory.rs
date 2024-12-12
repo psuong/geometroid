@@ -1,3 +1,5 @@
+use super::context::VkContext;
+use crate::to_array;
 use ash::{
     util::Align,
     vk::{
@@ -9,10 +11,6 @@ use ash::{
     },
     Device as AshDevice,
 };
-
-use crate::to_array;
-
-use super::context::VkContext;
 
 pub fn create_device_local_buffer_with_data<A, T: Copy>(
     vk_context: &VkContext,

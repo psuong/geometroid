@@ -1,3 +1,4 @@
+use crate::to_array;
 use ash::{
     vk::{
         DescriptorSetLayout, DescriptorSetLayoutBinding, DescriptorSetLayoutCreateInfo,
@@ -6,8 +7,6 @@ use ash::{
     Device,
 };
 use nalgebra_glm::Mat4;
-
-use crate::to_array;
 
 /// A descriptor layout specifies the types of resources that will be accessed. We need the
 /// model view projection matrix.
@@ -20,16 +19,6 @@ pub struct UniformBufferObject {
 }
 
 impl UniformBufferObject {
-    #[deprecated]
-    pub fn get_descriptor_set_layout_binding<'a>() -> DescriptorSetLayoutBinding<'a> {
-        // TODO: Check if we need a sampler descriptor later on
-        DescriptorSetLayoutBinding::default()
-            .binding(0)
-            .descriptor_type(DescriptorType::UNIFORM_BUFFER)
-            .descriptor_count(1)
-            .stage_flags(ShaderStageFlags::VERTEX)
-    }
-
     /// The descriptor_set_layout lets vulkan know the layout of the uniform buffers so that
     /// the shader has enough information.
     ///

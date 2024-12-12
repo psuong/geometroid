@@ -1,5 +1,3 @@
-use std::ffi::CString;
-
 use crate::{
     engine::{
         context::VkContext,
@@ -32,6 +30,7 @@ use ash::{
     },
     Device,
 };
+use std::ffi::CString;
 
 // TODO: Implement the copy trait or wrap it into an Option
 #[derive(Clone, Debug)]
