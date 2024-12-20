@@ -2,6 +2,7 @@ pub(crate) use crate::common::MAX_FRAMES_IN_FLIGHT;
 use crate::engine::render::render_desc::RenderDescriptor;
 use crate::engine::render::Vertex;
 use crate::math::{select, FORWARD, UP};
+use crate::ui::UISystem;
 use crate::{to_array, unwrap_read_ref};
 use array_util::empty;
 use ash::util::Align;
@@ -86,7 +87,7 @@ pub struct Engine {
     resize_dimensions: Option<[u32; 2]>,
     _start_instant: Instant,
     swapchain_wrapper: SwapchainWrapper,
-    render_pipeline: RenderPipeline,
+    pub render_pipeline: RenderPipeline,
     transient_command_pool: CommandPool,
     msaa_samples: SampleCountFlags,
     depth_format: Format,
@@ -95,6 +96,7 @@ pub struct Engine {
     texture: Texture,
     render_params: Vec<RenderDescriptor>,
     pub vk_context: VkContext,
+    ui_system: UISystem,
 }
 
 impl Engine {
@@ -240,6 +242,8 @@ impl Engine {
 
         let in_flight_frames = Self::create_sync_objects(vk_context.device_ref());
 
+        let ui_system = UISystem::new(&window, &vk_context, &render_pipeline);
+
         Self {
             dirty_swapchain: false,
             // mouse_inputs: MouseInputs::new(),
@@ -261,6 +265,7 @@ impl Engine {
             in_flight_frames,
             color_texture,
             render_params: render_descriptors,
+            ui_system
         }
     }
 

@@ -2,11 +2,13 @@ mod common;
 mod engine;
 mod helpers;
 mod math;
+mod releaser;
 mod ui;
 
 use chrono::Local;
 use env_logger::{Builder, Target};
 use log::LevelFilter;
+use ui::UISystem;
 use std::{fs::File, io::Write};
 use winit::event_loop::ActiveEventLoop;
 use winit::{
@@ -52,7 +54,7 @@ fn main() {
 #[derive(Default)]
 struct App {
     window: Option<Window>,
-    vulkan: Option<Engine>,
+    engine: Option<Engine>,
 }
 
 impl ApplicationHandler for App {
@@ -65,7 +67,9 @@ impl ApplicationHandler for App {
             )
             .unwrap();
 
-        self.vulkan = Some(Engine::new(&window));
+        let engine = Engine::new(&window);
+
+        self.engine = Some(engine);
         self.window = Some(window);
     }
 
@@ -77,13 +81,13 @@ impl ApplicationHandler for App {
     ) {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
-            WindowEvent::Resized(_) => self.vulkan.as_mut().unwrap().dirty_swapchain = true,
+            WindowEvent::Resized(_) => unwrap_read_write_ref!(self.engine).dirty_swapchain = true,
             _ => (),
         }
     }
 
     fn about_to_wait(&mut self, _: &ActiveEventLoop) {
-        let app = self.vulkan.as_mut().unwrap();
+        let app = self.engine.as_mut().unwrap();
         let window = self.window.as_ref().unwrap();
 
         if app.dirty_swapchain {
@@ -99,6 +103,7 @@ impl ApplicationHandler for App {
     }
 
     fn exiting(&mut self, _: &ActiveEventLoop) {
-        self.vulkan.as_ref().unwrap().wait_gpu_idle();
+        let engine = unwrap_read_ref!(self.engine);
+        engine.wait_gpu_idle();
     }
 }
