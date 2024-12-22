@@ -1,6 +1,6 @@
-use crate::engine::{context::VkContext, render::render_pipeline::RenderPipeline, Engine};
+use crate::engine::{context::VkContext, render::render_pipeline::RenderPipeline};
 use egui::{Context, ViewportId};
-use egui_ash_renderer::{Options, Renderer as UIRenderer};
+use egui_ash_renderer::{Options, Renderer};
 use egui_winit::State;
 use winit::window::Window;
 
@@ -9,7 +9,7 @@ mod image;
 pub struct UISystem {
     pub egui_ctx: Context,
     pub egui_winit: State,
-    pub renderer: UIRenderer,
+    pub renderer: Renderer,
 }
 
 impl UISystem {
@@ -29,7 +29,7 @@ impl UISystem {
             None,
         );
 
-        let renderer = UIRenderer::with_default_allocator(
+        let renderer = Renderer::with_default_allocator(
             &vulkan_context.instance,
             vulkan_context.physical_device,
             vulkan_context.device.clone(),
@@ -46,5 +46,10 @@ impl UISystem {
             egui_winit,
             renderer,
         }
+    }
+}
+
+impl Drop for UISystem {
+    fn drop(&mut self) {
     }
 }

@@ -39,6 +39,7 @@ impl InFlightFrames {
         }
     }
 
+    #[inline]
     pub fn destroy(&self, device: &Device) {
         self.sync_objects
             .iter()

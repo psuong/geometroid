@@ -499,15 +499,15 @@ impl RenderPipeline {
         }
     }
 
-    pub fn drop(&mut self, device: &Device) {
-        unsafe {
-            device.destroy_descriptor_pool(unwrap_value!(self.descriptor_pool), None);
-            device.destroy_descriptor_set_layout(unwrap_value!(self.descriptor_set_layout), None);
-            let uniform_buffers = unwrap_read_ref!(self.uniform_buffers);
-            uniform_buffers.iter().for_each(|(buffer, memory)| {
-                device.free_memory(*memory, None);
-                device.destroy_buffer(*buffer, None);
-            });
-        }
-    }
+    // pub fn drop(&mut self, device: &Device) {
+    //     unsafe {
+    //         device.destroy_descriptor_pool(unwrap_value!(self.descriptor_pool), None);
+    //         device.destroy_descriptor_set_layout(unwrap_value!(self.descriptor_set_layout), None);
+    //         let uniform_buffers = unwrap_read_ref!(self.uniform_buffers);
+    //         uniform_buffers.iter().for_each(|(buffer, memory)| {
+    //             device.free_memory(*memory, None);
+    //             device.destroy_buffer(*buffer, None);
+    //         });
+    //     }
+    // }
 }

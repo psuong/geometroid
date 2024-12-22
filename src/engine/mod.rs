@@ -77,7 +77,8 @@ use utils::QueueFamiliesIndices;
 
 pub struct Engine {
     pub dirty_swapchain: bool,
-    // pub mouse_inputs: MouseInputs,
+    pub run: bool,
+    ui_system: Option<UISystem>,
     command_buffers: Vec<CommandBuffer>,
     pub command_pool: CommandPool,
     pub graphics_queue: Queue,
@@ -96,7 +97,6 @@ pub struct Engine {
     texture: Texture,
     render_params: Vec<RenderDescriptor>,
     pub vk_context: VkContext,
-    ui_system: UISystem,
 }
 
 impl Engine {
@@ -242,10 +242,11 @@ impl Engine {
 
         let in_flight_frames = Self::create_sync_objects(vk_context.device_ref());
 
-        let ui_system = UISystem::new(&window, &vk_context, &render_pipeline);
+        let ui_system = Some(UISystem::new(&window, &vk_context, &render_pipeline));
 
         Self {
             dirty_swapchain: false,
+            run: true,
             // mouse_inputs: MouseInputs::new(),
             _start_instant: Instant::now(),
             resize_dimensions: None,
@@ -265,7 +266,7 @@ impl Engine {
             in_flight_frames,
             color_texture,
             render_params: render_descriptors,
-            ui_system
+            ui_system,
         }
     }
 
@@ -305,6 +306,11 @@ impl Engine {
     }
 
     pub fn draw_frame(&mut self) -> bool {
+        if !self.run {
+            log::debug!("Cancel drawing frame.");
+            return false;
+        }
+
         // log::trace!("Drawing frame.");
         let sync_objects = self.in_flight_frames.next().unwrap();
         let image_available_semaphore = sync_objects.image_available_semaphore;
@@ -533,7 +539,12 @@ impl Engine {
     /// Force the engine to wait because ALL vulkan operations are async.
     #[inline]
     pub fn wait_gpu_idle(&self) {
-        unsafe { self.vk_context.device_ref().device_wait_idle().unwrap() };
+        unsafe {
+            self.vk_context
+                .device_ref()
+                .device_wait_idle()
+                .expect("Failed to wait for graphics device.");
+        };
     }
 
     /// Create a logical device based on the validation layers that are enabled.
@@ -1421,14 +1432,18 @@ impl Drop for Engine {
         let device = self.vk_context.device_ref();
         self.in_flight_frames.destroy(device);
         unsafe {
-            self.render_pipeline.drop(device);
+            device.destroy_command_pool(self.transient_command_pool, None);
+            device.destroy_command_pool(self.command_pool, None);
+
+            // release the ui system
+
             self.render_params.iter_mut().for_each(|render_param| {
                 render_param.release(device);
             });
 
             self.texture.destroy(device);
-            device.destroy_command_pool(self.transient_command_pool, None);
-            device.destroy_command_pool(self.command_pool, None);
+            // let vk_context = &mut self.vk_context;
+            // vk_context.release();
         }
     }
 }

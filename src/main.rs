@@ -8,7 +8,6 @@ mod ui;
 use chrono::Local;
 use env_logger::{Builder, Target};
 use log::LevelFilter;
-use ui::UISystem;
 use std::{fs::File, io::Write};
 use winit::event_loop::ActiveEventLoop;
 use winit::{
@@ -22,6 +21,26 @@ use winit::{
 use crate::common::{HEIGHT, WIDTH};
 use crate::engine::Engine;
 
+#[cfg(debug_assertions)]
+fn init_logger(target: Target) {
+    Builder::from_default_env()
+        .target(target)
+        .filter_level(LevelFilter::Debug)
+        .format(|buf, record| {
+            writeln!(
+                buf,
+                "[{} {} {}:{}] {}",
+                Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
+                record.level(),
+                record.file().unwrap_or("unknown"),
+                record.line().unwrap_or(0),
+                record.args()
+            )
+        })
+        .init();
+}
+
+#[cfg(not(debug_assertions))]
 fn init_logger(target: Target) {
     Builder::from_default_env()
         .target(target)
@@ -80,7 +99,11 @@ impl ApplicationHandler for App {
         event: WindowEvent,
     ) {
         match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::CloseRequested => { 
+                let engine = unwrap_read_write_ref!(self.engine);
+                engine.run = false;
+                event_loop.exit();
+            },
             WindowEvent::Resized(_) => unwrap_read_write_ref!(self.engine).dirty_swapchain = true,
             _ => (),
         }
@@ -103,6 +126,7 @@ impl ApplicationHandler for App {
     }
 
     fn exiting(&mut self, _: &ActiveEventLoop) {
+        log::debug!("Exiting app.");
         let engine = unwrap_read_ref!(self.engine);
         engine.wait_gpu_idle();
     }
