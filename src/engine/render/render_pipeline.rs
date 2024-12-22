@@ -471,7 +471,7 @@ impl RenderPipeline {
         self
     }
 
-    /// Releases the framebuffers and destroys the pipeline and pipeline_layout given the Device.
+    /// Releases the framebuffers and destroys the pipeline, pipeline_layout, and the render pass from the Device.
     pub fn release(&self, device: &Device) {
         unsafe {
             let framebuffers = unwrap_read_ref!(self.framebuffers);
@@ -481,6 +481,7 @@ impl RenderPipeline {
 
             device.destroy_pipeline(unwrap_value!(self.pipeline), None);
             device.destroy_pipeline_layout(unwrap_value!(self.pipeline_layout), None);
+            device.destroy_render_pass(unwrap_value!(self.render_pass), None);
         }
     }
 

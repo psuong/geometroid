@@ -78,7 +78,7 @@ use utils::QueueFamiliesIndices;
 pub struct Engine {
     pub dirty_swapchain: bool,
     pub run: bool,
-    // ui_system: Option<UISystem>,
+    ui_system: Option<UISystem>,
 
     command_buffers: Vec<CommandBuffer>,
     pub command_pool: CommandPool,
@@ -243,7 +243,7 @@ impl Engine {
 
         let in_flight_frames = Self::create_sync_objects(vk_context.device_ref());
 
-        // let ui_system = Some(UISystem::new(&window, &vk_context, &render_pipeline));
+        let ui_system = Some(UISystem::new(&window, &vk_context, &render_pipeline));
 
         Self {
             dirty_swapchain: false,
@@ -267,7 +267,7 @@ impl Engine {
             in_flight_frames,
             color_texture,
             render_params: render_descriptors,
-            // ui_system,
+            ui_system,
         }
     }
 
@@ -1436,5 +1436,6 @@ impl Drop for Engine {
 
             self.texture.destroy(device);
         }
+        self.render_pipeline.drop(device);
     }
 }
