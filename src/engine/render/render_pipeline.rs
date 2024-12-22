@@ -7,6 +7,7 @@ use crate::{
         swapchain_wrapper::SwapchainProperties,
         texture::Texture,
         uniform_buffer_object::UniformBufferObject,
+        utils::VkManualRelease,
     },
     to_array, unwrap_read_ref, unwrap_read_write_ref, unwrap_value,
 };
@@ -500,8 +501,10 @@ impl RenderPipeline {
             pipeline_layout: self.pipeline_layout,
         }
     }
+}
 
-    pub fn drop(&mut self, device: &Device) {
+impl VkManualRelease for RenderPipeline {
+    fn drop(&self, device: &Device) {
         unsafe {
             device.destroy_descriptor_pool(unwrap_value!(self.descriptor_pool), None);
             device.destroy_descriptor_set_layout(unwrap_value!(self.descriptor_set_layout), None);

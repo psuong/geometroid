@@ -3,6 +3,10 @@ use ash::{
     Device,
 };
 
+pub trait VkManualRelease {
+    fn drop(&self, device: &Device);
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct QueueFamiliesIndices {
     pub graphics_index: u32,

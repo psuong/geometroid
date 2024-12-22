@@ -2,6 +2,7 @@ pub(crate) use crate::common::MAX_FRAMES_IN_FLIGHT;
 use crate::engine::render::render_desc::RenderDescriptor;
 use crate::engine::render::Vertex;
 use crate::math::{select, FORWARD, UP};
+use crate::executor::Executor;
 use crate::ui::UISystem;
 use crate::{to_array, unwrap_read_ref};
 use array_util::empty;
@@ -73,7 +74,7 @@ use debug::{
     check_validation_layer_support, get_layer_names_and_pointers, setup_debug_messenger,
     ENABLE_VALIDATION_LAYERS,
 };
-use utils::QueueFamiliesIndices;
+use utils::{QueueFamiliesIndices, VkManualRelease};
 
 pub struct Engine {
     pub dirty_swapchain: bool,
@@ -1419,14 +1420,25 @@ impl Engine {
     }
 }
 
+impl VkManualRelease for Engine {
+    fn drop(&self, device: &AshDevice) {
+        self.in_flight_frames.destroy(device);
+        unsafe {
+            device.destroy_command_pool(self.transient_command_pool, None);
+            device.destroy_command_pool(self.command_pool, None);
+        }
+    }
+}
+
 impl Drop for Engine {
     fn drop(&mut self) {
         log::debug!("Releasing engine.");
         self.cleanup_swapchain();
 
         let device = self.vk_context.device_ref();
-        self.in_flight_frames.destroy(device);
-        unsafe {
+
+        Executor::default().execute(&mut || unsafe {
+            self.in_flight_frames.destroy(device);
             device.destroy_command_pool(self.transient_command_pool, None);
             device.destroy_command_pool(self.command_pool, None);
 
@@ -1435,7 +1447,7 @@ impl Drop for Engine {
             });
 
             self.texture.destroy(device);
-        }
+        });
         self.render_pipeline.drop(device);
     }
 }
