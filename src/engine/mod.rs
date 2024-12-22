@@ -78,7 +78,8 @@ use utils::QueueFamiliesIndices;
 pub struct Engine {
     pub dirty_swapchain: bool,
     pub run: bool,
-    ui_system: Option<UISystem>,
+    // ui_system: Option<UISystem>,
+
     command_buffers: Vec<CommandBuffer>,
     pub command_pool: CommandPool,
     pub graphics_queue: Queue,
@@ -242,7 +243,7 @@ impl Engine {
 
         let in_flight_frames = Self::create_sync_objects(vk_context.device_ref());
 
-        let ui_system = Some(UISystem::new(&window, &vk_context, &render_pipeline));
+        // let ui_system = Some(UISystem::new(&window, &vk_context, &render_pipeline));
 
         Self {
             dirty_swapchain: false,
@@ -266,7 +267,7 @@ impl Engine {
             in_flight_frames,
             color_texture,
             render_params: render_descriptors,
-            ui_system,
+            // ui_system,
         }
     }
 
@@ -407,14 +408,8 @@ impl Engine {
         unsafe {
             self.depth_texture.destroy(device);
             self.color_texture.destroy(device);
-            // self.swapchain_wrapper
-            //     .framebuffers
-            //     .iter()
-            //     .for_each(|f| device.destroy_framebuffer(*f, None));
             device.free_command_buffers(self.command_pool, &self.command_buffers);
             self.render_pipeline.release(device);
-            // device.destroy_pipeline(self.pipeline, None);
-            // device.destroy_pipeline_layout(self.pipeline_layout, None);
             self.swapchain_wrapper.release_swapchain_resources(device);
         }
     }
@@ -1435,15 +1430,11 @@ impl Drop for Engine {
             device.destroy_command_pool(self.transient_command_pool, None);
             device.destroy_command_pool(self.command_pool, None);
 
-            // release the ui system
-
             self.render_params.iter_mut().for_each(|render_param| {
                 render_param.release(device);
             });
 
             self.texture.destroy(device);
-            // let vk_context = &mut self.vk_context;
-            // vk_context.release();
         }
     }
 }
