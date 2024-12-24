@@ -47,9 +47,10 @@ impl UISystem {
             renderer,
         }
     }
-}
 
-impl Drop for UISystem {
-    fn drop(&mut self) {
+    pub fn build_ui(&mut self, ctx: &Context) {
+        egui::Window::new("Test").show(ctx, |ui| {
+            let _ = ui.button("A button");
+        });
     }
 }

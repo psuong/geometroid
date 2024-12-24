@@ -122,7 +122,8 @@ impl ApplicationHandler for App {
             }
         }
 
-        app.dirty_swapchain = app.draw_frame();
+        let window = unwrap_read_ref!(self.window);
+        app.dirty_swapchain = app.draw_frame(window);
     }
 
     fn exiting(&mut self, _: &ActiveEventLoop) {

@@ -1,10 +1,10 @@
 pub(crate) use crate::common::MAX_FRAMES_IN_FLIGHT;
 use crate::engine::render::render_desc::RenderDescriptor;
 use crate::engine::render::Vertex;
-use crate::math::{select, FORWARD, UP};
 use crate::executor::Executor;
+use crate::math::{select, FORWARD, UP};
 use crate::ui::UISystem;
-use crate::{to_array, unwrap_read_ref};
+use crate::{to_array, unwrap_read_ref, unwrap_read_write_ref};
 use array_util::empty;
 use ash::util::Align;
 use ash::{
@@ -307,11 +307,24 @@ impl Engine {
         unsafe { entry.create_instance(&instance_create_info, None).unwrap() }
     }
 
-    pub fn draw_frame(&mut self) -> bool {
+    pub fn draw_frame(&mut self, window: &Window) -> bool {
         if !self.run {
             log::debug!("Cancel drawing frame.");
             return false;
         }
+
+        let ui_system = unwrap_read_write_ref!(self.ui_system);
+        let raw_input = ui_system.egui_winit.take_egui_input(window);
+
+        let egui::FullOutput {
+            platform_output,
+            textures_delta,
+            shapes,
+            pixels_per_point,
+            ..
+        } = ui_system.egui_ctx.run(raw_input, |ctx| {
+
+        });
 
         // log::trace!("Drawing frame.");
         let sync_objects = self.in_flight_frames.next().unwrap();
