@@ -1,18 +1,32 @@
 use crate::engine::{context::VkContext, render::render_pipeline::RenderPipeline};
-use egui::{Context, ViewportId};
+use egui::{Context, FullOutput, RawInput, ViewportId};
 use egui_ash_renderer::{Options, Renderer};
 use egui_winit::State;
 use winit::window::Window;
 
 mod image;
 
-pub struct UISystem {
+pub trait UISystem {
+    fn build_ui(&self, ctx: &Context);
+}
+
+pub struct SampleUI {}
+
+impl UISystem for SampleUI {
+    fn build_ui(&self, ctx: &Context) {
+        egui::Window::new("Test").show(ctx, |ui| {
+            let _ = ui.button("A button");
+        });
+    }
+}
+
+pub struct UIRenderer {
     pub egui_ctx: Context,
     pub egui_winit: State,
     pub renderer: Renderer,
 }
 
-impl UISystem {
+impl UIRenderer {
     pub fn new(
         winit_window: &Window,
         vulkan_context: &VkContext,
@@ -41,16 +55,23 @@ impl UISystem {
         )
         .expect("Renderer failed to be created for egui-ash");
 
-        UISystem {
+        UIRenderer {
             egui_ctx,
             egui_winit,
             renderer,
         }
     }
 
-    pub fn build_ui(&mut self, ctx: &Context) {
-        egui::Window::new("Test").show(ctx, |ui| {
-            let _ = ui.button("A button");
+    pub fn update<T>(&mut self, raw_input: RawInput, window: &Window, ui_systems: &Vec<T>) -> FullOutput
+    where
+        T: UISystem,
+    {
+        let full_output = self.egui_ctx.run(raw_input, |ui| {
+            for ui_system in ui_systems {
+                ui_system.build_ui(ui);
+            }
         });
+
+        self.egui_winit.handle_platform_output(window, full_output.platform_output);
     }
 }

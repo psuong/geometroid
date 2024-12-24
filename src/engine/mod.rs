@@ -3,7 +3,7 @@ use crate::engine::render::render_desc::RenderDescriptor;
 use crate::engine::render::Vertex;
 use crate::executor::Executor;
 use crate::math::{select, FORWARD, UP};
-use crate::ui::UISystem;
+use crate::ui::{SampleUI, UIRenderer};
 use crate::{to_array, unwrap_read_ref, unwrap_read_write_ref};
 use array_util::empty;
 use ash::util::Align;
@@ -29,6 +29,7 @@ use ash::{
     },
     Device as AshDevice, Entry, Instance,
 };
+use egui::TextureId;
 use memory::{create_buffer, execute_one_time_commands, find_memory_type};
 use nalgebra::{Point3, Unit};
 use nalgebra_glm::{Mat4, Vec2, Vec3, Vec4};
@@ -79,7 +80,7 @@ use utils::{QueueFamiliesIndices, VkManualRelease};
 pub struct Engine {
     pub dirty_swapchain: bool,
     pub run: bool,
-    ui_system: Option<UISystem>,
+    ui_system: Option<UIRenderer>,
 
     command_buffers: Vec<CommandBuffer>,
     pub command_pool: CommandPool,
@@ -97,6 +98,7 @@ pub struct Engine {
     depth_texture: Texture,
     color_texture: Texture,
     texture: Texture,
+    textures_to_free: Option<Vec<TextureId>>,
     render_params: Vec<RenderDescriptor>,
     pub vk_context: VkContext,
 }
@@ -232,19 +234,19 @@ impl Engine {
             properties,
         );
 
-        let render_descriptors = vec![render_desc];
+        let render_params = vec![render_desc];
 
         let command_buffers = Self::create_and_register_command_buffers(
             vk_context.device_ref(),
             command_pool,
             &swapchain_wrapper,
-            &render_descriptors,
+            &render_params,
             &render_pipeline,
         );
 
         let in_flight_frames = Self::create_sync_objects(vk_context.device_ref());
 
-        let ui_system = Some(UISystem::new(&window, &vk_context, &render_pipeline));
+        let ui_system = Some(UIRenderer::new(&window, &vk_context, &render_pipeline));
 
         Self {
             dirty_swapchain: false,
@@ -267,8 +269,9 @@ impl Engine {
             command_buffers,
             in_flight_frames,
             color_texture,
-            render_params: render_descriptors,
+            render_params,
             ui_system,
+            textures_to_free: None
         }
     }
 
@@ -313,20 +316,8 @@ impl Engine {
             return false;
         }
 
-        let ui_system = unwrap_read_write_ref!(self.ui_system);
-        let raw_input = ui_system.egui_winit.take_egui_input(window);
+        // Update the textures
 
-        let egui::FullOutput {
-            platform_output,
-            textures_delta,
-            shapes,
-            pixels_per_point,
-            ..
-        } = ui_system.egui_ctx.run(raw_input, |ctx| {
-
-        });
-
-        // log::trace!("Drawing frame.");
         let sync_objects = self.in_flight_frames.next().unwrap();
         let image_available_semaphore = sync_objects.image_available_semaphore;
         let render_finished_semaphore = sync_objects.render_finished_semaphore;
@@ -339,6 +330,18 @@ impl Engine {
                 .wait_for_fences(&wait_fences, true, u64::MAX)
                 .unwrap()
         };
+
+        // TODO: Free the textures
+        if let Some(textures) = self.textures_to_free.take() {
+        }
+
+        let ui_system = unwrap_read_write_ref!(self.ui_system);
+        let raw_input = ui_system.egui_winit.take_egui_input(window);
+        let full_output = ui_system.update(raw_input, window, &vec![SampleUI { }]);
+
+        if !full_output.textures_delta.free.is_empty() {
+            self.textures_to_free = Some(full_output.textures_delta.free.clone());
+        }
 
         // TODO: Write a wrapper for acquiring the next image
         let result = unsafe {
