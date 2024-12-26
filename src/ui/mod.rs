@@ -20,6 +20,7 @@ impl UISystem for SampleUI {
     }
 }
 
+#[deprecated]
 pub struct UIRenderer {
     pub egui_ctx: Context,
     pub egui_winit: State,
@@ -60,18 +61,5 @@ impl UIRenderer {
             egui_winit,
             renderer,
         }
-    }
-
-    pub fn update<T>(&mut self, raw_input: RawInput, window: &Window, ui_systems: &Vec<T>) -> FullOutput
-    where
-        T: UISystem,
-    {
-        let full_output = self.egui_ctx.run(raw_input, |ui| {
-            for ui_system in ui_systems {
-                ui_system.build_ui(ui);
-            }
-        });
-
-        self.egui_winit.handle_platform_output(window, full_output.platform_output);
     }
 }

@@ -3,8 +3,7 @@ use crate::engine::render::render_desc::RenderDescriptor;
 use crate::engine::render::Vertex;
 use crate::executor::Executor;
 use crate::math::{select, FORWARD, UP};
-use crate::ui::{SampleUI, UIRenderer};
-use crate::{to_array, unwrap_read_ref, unwrap_read_write_ref};
+use crate::{to_array, unwrap_read_ref};
 use array_util::empty;
 use ash::util::Align;
 use ash::{
@@ -29,7 +28,9 @@ use ash::{
     },
     Device as AshDevice, Entry, Instance,
 };
-use egui::TextureId;
+use egui::{Context, TextureId, ViewportId};
+use egui_ash_renderer::{Options, Renderer};
+use egui_winit::State;
 use memory::{create_buffer, execute_one_time_commands, find_memory_type};
 use nalgebra::{Point3, Unit};
 use nalgebra_glm::{Mat4, Vec2, Vec3, Vec4};
@@ -37,6 +38,7 @@ use physical_devices::pick_physical_device;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use render::render_pipeline::RenderPipeline;
 use render::Mesh;
+use std::borrow::Borrow;
 use std::{
     ffi::{CStr, CString},
     mem::{align_of, size_of},
@@ -80,7 +82,11 @@ use utils::{QueueFamiliesIndices, VkManualRelease};
 pub struct Engine {
     pub dirty_swapchain: bool,
     pub run: bool,
-    ui_system: Option<UIRenderer>,
+
+    // UI Side
+    egui_ctx: Context,
+    egui_winit: State,
+    ui_renderer: Renderer,
 
     command_buffers: Vec<CommandBuffer>,
     pub command_pool: CommandPool,
@@ -246,7 +252,27 @@ impl Engine {
 
         let in_flight_frames = Self::create_sync_objects(vk_context.device_ref());
 
-        let ui_system = Some(UIRenderer::new(&window, &vk_context, &render_pipeline));
+        let egui_ctx = Context::default();
+        let egui_winit = State::new(
+            egui_ctx.clone(),
+            ViewportId::ROOT,
+            &window,
+            None,
+            None,
+            None,
+        );
+
+        let renderer = Renderer::with_default_allocator(
+            &vk_context.instance,
+            vk_context.physical_device,
+            vk_context.device.clone(),
+            render_pipeline.render_pass.unwrap(),
+            Options {
+                srgb_framebuffer: true,
+                ..Default::default()
+            },
+        )
+        .expect("Failed to create an egui renderer!");
 
         Self {
             dirty_swapchain: false,
@@ -270,8 +296,10 @@ impl Engine {
             in_flight_frames,
             color_texture,
             render_params,
-            ui_system,
-            textures_to_free: None
+            textures_to_free: None,
+            egui_ctx,
+            egui_winit,
+            ui_renderer: renderer,
         }
     }
 
@@ -332,16 +360,33 @@ impl Engine {
         };
 
         // TODO: Free the textures
-        if let Some(textures) = self.textures_to_free.take() {
+        if let Some(textures) = self.textures_to_free.take() {}
+
+        let raw_input = self.egui_winit.take_egui_input(window);
+
+        let egui::FullOutput {
+            platform_output,
+            textures_delta,
+            shapes,
+            pixels_per_point,
+            ..
+        } = self.egui_ctx.run(raw_input, |ctx| {});
+
+        if !textures_delta.free.is_empty() {
+            self.textures_to_free = Some(textures_delta.free.clone());
         }
 
-        let ui_system = unwrap_read_write_ref!(self.ui_system);
-        let raw_input = ui_system.egui_winit.take_egui_input(window);
-        let full_output = ui_system.update(raw_input, window, &vec![SampleUI { }]);
-
-        if !full_output.textures_delta.free.is_empty() {
-            self.textures_to_free = Some(full_output.textures_delta.free.clone());
+        if !textures_delta.set.is_empty() {
+            self.ui_renderer
+                .set_textures(
+                    self.graphics_queue,
+                    self.command_pool,
+                    textures_delta.set.as_slice(),
+                )
+                .expect("Failed to update egui textures!");
         }
+
+        let clipped_primitives = self.egui_ctx.tessellate(shapes, pixels_per_point);
 
         // TODO: Write a wrapper for acquiring the next image
         let result = unsafe {
@@ -372,6 +417,8 @@ impl Engine {
         let device = self.vk_context.device_ref();
         let wait_semaphores = to_array!(image_available_semaphore);
         let signal_semaphores = to_array!(render_finished_semaphore);
+
+        
 
         // Submit command buffer
         {
