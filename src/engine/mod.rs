@@ -1,7 +1,6 @@
 pub(crate) use crate::common::MAX_FRAMES_IN_FLIGHT;
 use crate::engine::render::render_desc::RenderDescriptor;
 use crate::engine::render::Vertex;
-use crate::executor::Executor;
 use crate::math::{select, FORWARD, UP};
 use crate::{to_array, unwrap_read_ref};
 use array_util::empty;
@@ -417,8 +416,6 @@ impl Engine {
         let device = self.vk_context.device_ref();
         let wait_semaphores = to_array!(image_available_semaphore);
         let signal_semaphores = to_array!(render_finished_semaphore);
-
-        
 
         // Submit command buffer
         {
@@ -1495,12 +1492,12 @@ impl VkManualRelease for Engine {
 
 impl Drop for Engine {
     fn drop(&mut self) {
-        log::debug!("Releasing engine.");
-        self.cleanup_swapchain();
+        unsafe {
+            log::debug!("Releasing engine.");
+            self.cleanup_swapchain();
 
-        let device = self.vk_context.device_ref();
+            let device = self.vk_context.device_ref();
 
-        Executor::default().execute(&mut || unsafe {
             self.in_flight_frames.destroy(device);
             device.destroy_command_pool(self.transient_command_pool, None);
             device.destroy_command_pool(self.command_pool, None);
@@ -1510,7 +1507,7 @@ impl Drop for Engine {
             });
 
             self.texture.destroy(device);
-        });
-        self.render_pipeline.drop(device);
+            self.render_pipeline.drop(device);
+        }
     }
 }

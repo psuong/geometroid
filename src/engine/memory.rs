@@ -1,16 +1,21 @@
+use std::error::Error;
+
 use super::context::VkContext;
 use crate::to_array;
 use ash::{
     util::Align,
     vk::{
-        Buffer, BufferCopy, BufferCreateInfo, BufferUsageFlags, CommandBuffer,
-        CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel,
-        CommandBufferUsageFlags, CommandPool, DeviceMemory, DeviceSize, Fence, MemoryAllocateInfo,
-        MemoryMapFlags, MemoryPropertyFlags, MemoryRequirements, PhysicalDeviceMemoryProperties,
-        Queue, SharingMode, SubmitInfo,
+        Buffer, BufferCopy, BufferCreateInfo, BufferUsageFlags, ClearColorValue, ClearValue,
+        CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel,
+        CommandBufferUsageFlags, CommandPool, CommandPoolResetFlags, DeviceMemory, DeviceSize,
+        Extent2D, Fence, Framebuffer, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags,
+        MemoryRequirements, Offset2D, PhysicalDeviceMemoryProperties, Queue, Rect2D, RenderPass,
+        RenderPassBeginInfo, SharingMode, SubmitInfo, SubpassContents,
     },
     Device as AshDevice,
 };
+use egui::ClippedPrimitive;
+use egui_ash_renderer::Renderer;
 
 pub fn create_device_local_buffer_with_data<A, T: Copy>(
     vk_context: &VkContext,
@@ -141,6 +146,52 @@ pub fn copy_buffer(
 
         unsafe { device.cmd_copy_buffer(buffer, src, dst, &regions) };
     });
+}
+
+pub fn record_command_buffers(
+    device: &AshDevice,
+    command_pool: CommandPool,
+    command_buffer: CommandBuffer,
+    framebuffer: Framebuffer,
+    render_pass: RenderPass,
+    extent: Extent2D,
+    pixels_per_point: f32,
+    ui_renderer: &mut Renderer,
+    clipped_primitives: &[ClippedPrimitive],
+) -> Result<(), Box<dyn Error>> {
+    unsafe { device.reset_command_pool(command_pool, CommandPoolResetFlags::empty())? };
+
+    let command_buffer_begin_info =
+        CommandBufferBeginInfo::default().flags(CommandBufferUsageFlags::SIMULTANEOUS_USE);
+    unsafe { device.begin_command_buffer(command_buffer, &command_buffer_begin_info)? };
+
+    let render_pass_begin_info = RenderPassBeginInfo::default()
+        .render_pass(render_pass)
+        .framebuffer(framebuffer)
+        .render_area(Rect2D {
+            offset: Offset2D { x: 0, y: 0 },
+            extent,
+        })
+        .clear_values(&to_array!(ClearValue {
+            color: ClearColorValue {
+                float32: [0.007, 0.007, 0.007, 1.0],
+            },
+        }));
+
+    unsafe {
+        device.cmd_begin_render_pass(
+            command_buffer,
+            &render_pass_begin_info,
+            SubpassContents::INLINE,
+        );
+    }
+
+    ui_renderer.cmd_draw(command_buffer, extent, pixels_per_point, clipped_primitives)?;
+
+    unsafe { device.cmd_end_render_pass(command_buffer) };
+    unsafe { device.end_command_buffer(command_buffer)? };
+
+    Ok(())
 }
 
 /// A one time executor that takes in a lambda to execute. This can be used in multiple
