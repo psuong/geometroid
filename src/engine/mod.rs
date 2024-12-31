@@ -2,7 +2,7 @@ pub(crate) use crate::common::MAX_FRAMES_IN_FLIGHT;
 use crate::engine::render::render_desc::RenderDescriptor;
 use crate::engine::render::Vertex;
 use crate::math::{select, FORWARD, UP};
-use crate::{to_array, unwrap_read_ref};
+use crate::{to_array, unwrap_read_ref, unwrap_value};
 use array_util::empty;
 use ash::util::Align;
 use ash::{
@@ -30,14 +30,13 @@ use ash::{
 use egui::{Context, TextureId, ViewportId};
 use egui_ash_renderer::{Options, Renderer};
 use egui_winit::State;
-use memory::{create_buffer, execute_one_time_commands, find_memory_type};
+use memory::{create_buffer, execute_one_time_commands, find_memory_type, record_command_buffers};
 use nalgebra::{Point3, Unit};
 use nalgebra_glm::{Mat4, Vec2, Vec3, Vec4};
 use physical_devices::pick_physical_device;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use render::render_pipeline::RenderPipeline;
 use render::Mesh;
-use std::borrow::Borrow;
 use std::{
     ffi::{CStr, CString},
     mem::{align_of, size_of},
@@ -359,7 +358,11 @@ impl Engine {
         };
 
         // TODO: Free the textures
-        if let Some(textures) = self.textures_to_free.take() {}
+        if let Some(textures) = self.textures_to_free.take() {
+            self.ui_renderer
+                .free_textures(&textures)
+                .expect("Failed to free textures from egui!");
+        }
 
         let raw_input = self.egui_winit.take_egui_input(window);
 
@@ -369,7 +372,14 @@ impl Engine {
             shapes,
             pixels_per_point,
             ..
-        } = self.egui_ctx.run(raw_input, |ctx| {});
+        } = self.egui_ctx.run(raw_input, |ctx| {
+            egui::Window::new("Sample").show(ctx, |ui| {
+                ui.label("Hey Luqman");
+            });
+        });
+
+        self.egui_winit
+            .handle_platform_output(&window, platform_output);
 
         if !textures_delta.free.is_empty() {
             self.textures_to_free = Some(textures_delta.free.clone());
@@ -416,11 +426,26 @@ impl Engine {
         let device = self.vk_context.device_ref();
         let wait_semaphores = to_array!(image_available_semaphore);
         let signal_semaphores = to_array!(render_finished_semaphore);
+        let command_buffer = self.command_buffers[image_index as usize];
+
+        // Rerecord the command buffers to draw the geometry
+        record_command_buffers(
+            self.vk_context.device_ref(),
+            self.command_pool,
+            command_buffer,
+            unwrap_read_ref!(self.render_pipeline.framebuffers)[image_index as usize],
+            unwrap_value!(self.render_pipeline.render_pass),
+            self.swapchain_wrapper.properties.extent,
+            pixels_per_point,
+            &mut self.ui_renderer,
+            &clipped_primitives,
+        )
+        .expect("Failed to record command buffer to redraw geometry.");
 
         // Submit command buffer
         {
             let wait_stages = [PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
-            let command_buffers = [self.command_buffers[image_index as usize]];
+            let command_buffers = [command_buffer];
             let submit_info = SubmitInfo::default()
                 .wait_semaphores(&wait_semaphores)
                 .wait_dst_stage_mask(&wait_stages)
